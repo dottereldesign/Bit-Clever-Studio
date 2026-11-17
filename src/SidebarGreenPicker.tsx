@@ -18,8 +18,10 @@ const greens=[
 ] as const;
 
 export default function SidebarGreenPicker(){
-  const [saved,setSaved]=useHistoryState<string>('sidebar-active-green',()=>{try{return JSON.parse(localStorage.getItem('sidebar-active-green')??'"soft"');}catch{return 'soft';}},'Sidebar active green');
-  const selected=greens.find(g=>g.id===saved)??greens[0];
+  const [saved,setSaved]=useHistoryState<string>('sidebar-active-green',()=>{try{return JSON.parse(localStorage.getItem('sidebar-active-green')??'"emerald"');}catch{return 'emerald';}},'Sidebar active green');
+  const [emeraldApplied,,markEmeraldApplied]=useHistoryState<boolean>('sidebar-emerald-default-applied',()=>localStorage.getItem('sidebar-emerald-default-applied')==='true','Emerald default applied');
+  useEffect(()=>{if(!emeraldApplied){setSaved('emerald');markEmeraldApplied(true);}},[emeraldApplied,setSaved,markEmeraldApplied]);
+  const selected=greens.find(g=>g.id===saved)??greens[8];
   const [open,setOpen]=useState(false);
   const trigger=useRef<HTMLButtonElement>(null),panel=useRef<HTMLDivElement>(null);
   useLayoutEffect(()=>{

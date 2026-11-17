@@ -187,3 +187,7 @@
   background:transparent;
   color:inherit;
 }
+:root .app .sidebar :is(.nav-item.source-active,.project-folder-row.active,.project-row.active,.project-scope.active):not(.drop-target) small {
+  color:inherit;
+  opacity:1;
+}
