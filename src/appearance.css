@@ -180,8 +180,8 @@
 .source-item[data-reorder-edge=after] { box-shadow:inset 0 -2px #758b65; }
 /* Selected folders stay distinct from hover, including in custom themes. */
 :root .app .sidebar :is(.nav-item.source-active,.project-folder-row.active,.project-row.active,.project-scope.active):not(.drop-target) {
-  background:color-mix(in srgb,#76a45f 22%,var(--app-panel,#fff));
-  color:var(--app-ink,#35512a) !important;
+  background:var(--sidebar-active-bg,color-mix(in srgb,#76a45f 22%,var(--app-panel,#fff)));
+  color:var(--sidebar-active-ink,var(--app-ink,#35512a)) !important;
 }
 :root .app .sidebar :is(.project-folder-row.active,.project-row.active):not(.drop-target) > .nav-item {
   background:transparent;

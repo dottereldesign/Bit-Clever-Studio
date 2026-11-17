@@ -1,6 +1,7 @@
 import {useAppTheme} from './AppTheme';
 import MyBusiness, {BusinessNavigation} from './MyBusiness';
 import SidebarTools from './SidebarTools';
+import SidebarGreenPicker from './SidebarGreenPicker';
 import AddContactDialog from './AddContactDialog';
 import type {WorkTarget} from './workNavigation';
 import SettingsHub from './SettingsHub';
@@ -1365,6 +1366,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
       }}
       style={{ "--sidebar-width": `${sidebarWidth}px`,"--nav-row":`${navLayout.row}px`,"--nav-inset":`${navLayout.inset}px`,"--nav-radius":`${navLayout.radius}px`,"--nav-indent":navLayout.indent===undefined?undefined:`${navLayout.indent}px` } as React.CSSProperties}
     >
+      <SidebarGreenPicker/>
       <aside
         className="sidebar"
         onClickCapture={e=>{if((e.target as HTMLElement).closest('.nav-item,.brand,[aria-label=Settings]')){const stamp=performance.now();navigationStart.current=stamp;setTimeout(()=>{if(navigationStart.current===stamp)navigationStart.current=null;},0);}if(modal?.kind==='settings'&&(e.target as HTMLElement).closest('.nav-item,.brand'))setModal(null);}}
