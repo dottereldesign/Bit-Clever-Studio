@@ -170,6 +170,6 @@
 @container(max-width:165px) { .section-feature .section-title { font-size:12px; }.section-feature.has-custom-icon .section-title { overflow-wrap:anywhere; }.section-feature.has-custom-icon .section-emblem { padding:0; } }
 .customise-layout > nav button { white-space:nowrap;flex-shrink:0; }
 
-.source-item[data-folder-order] { cursor:grab; }
+.source-item[data-folder-order] { cursor:pointer; }
 .source-item[data-reorder-edge=before] { box-shadow:inset 0 2px #758b65; }
 .source-item[data-reorder-edge=after] { box-shadow:inset 0 -2px #758b65; }
