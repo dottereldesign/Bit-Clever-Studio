@@ -132,7 +132,7 @@ import type { GeneralDraft,GeneralOption } from './GeneralEditor';
 import CollectionView from './CollectionView';
 import { appHistory } from "./appHistory";
 import { useHistoryState, useHistory, HistoryButtons } from "./useAppHistory";
-import { allComponents, componentFolders as builtInComponentFolders, componentInbox, filingCategory, isComponent, isBlogFolder } from "./componentsLibrary";
+import { allComponents, componentFolders as builtInComponentFolders, componentInbox, filingCategory, isComponent } from "./componentsLibrary";
 import CategoryPicker from "./CategoryPicker";
 import {designFoldersOf, componentFoldersOf, categoryOf, categoryLabel, libraryCategories, isTableCollection, isTableLink, createMembershipIndex} from "./model";
 
@@ -364,7 +364,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
   const stopHoverRef=useRef<()=>void>(()=>{});
   const setHoverId=useCallback((_id:null)=>stopHoverRef.current(),[]);
   const [category,setCategory] = useState<string|null>(savedView?.category??null);
-  useEffect(()=>{if(category&&isBlogFolder(category)&&category!==filingCategory(category))setCategory(filingCategory(category));},[category]);
+  useEffect(()=>{if(category&&isComponent(category)&&category!==filingCategory(category))setCategory(filingCategory(category));},[category]);
   const [categoryUndo,setCategoryUndo] = useState<[number,string][]|null>(null);
   const categoryUndoNotice = useRef("");
   const [categoryDrop,setCategoryDrop] = useState<string|null>(null);

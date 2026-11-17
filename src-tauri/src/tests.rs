@@ -1301,6 +1301,26 @@ fn merged_blog_folder_removal_preserves_other_memberships_and_undo() {
 }
 
 #[test]
+fn merged_auth_and_retired_component_memberships_preserve_history() {
+ let temp=tempfile::tempdir().unwrap();let path=temp.path().join("components.sqlite");db::init(&path).unwrap();
+ db::connect(&path).unwrap().execute("INSERT INTO items(id,path,name,kind,source,added) VALUES(1,'sample.png','Component','image','',1)",[]).unwrap();
+ let apply=|action,value|db::change(&path,change(action,vec![1],None,None,value));
+ let read=||db::load(&path,false).unwrap().items.remove(0);
+ for folder in ["Components / Logins","Components / Signups","Components / Logins & Signups","Components / Sponsors"] {apply("set_category",Some(folder)).unwrap();}
+ apply("remove_component_folder",Some("Components / Logins & Signups")).unwrap();assert_eq!(read().component_folders,vec!["Components / Sponsors"]);
+ apply("undo_organisation",None).unwrap();assert_eq!(read().component_folders.len(),4);
+ apply("redo_organisation",None).unwrap();assert_eq!(read().component_folders,vec!["Components / Sponsors"]);
+ for retired in ["Components / Banners","Components / Cart & checkout","Components / Logo grids","Components / Videos"] {
+  let connection=db::connect(&path).unwrap();connection.execute("DELETE FROM item_component_folders WHERE item_id=1",[]).unwrap();
+  connection.execute("INSERT INTO item_component_folders VALUES(1,?)",[retired]).unwrap();
+  apply("set_category",Some("Illustration")).unwrap();assert!(read().component_folders.is_empty());
+  apply("undo_organisation",None).unwrap();assert_eq!(read().component_folders,vec![retired]);
+  apply("set_category",Some("Components / Sponsors")).unwrap();assert_eq!(read().component_folders,vec!["Components / Sponsors"]);
+ }
+ assert_eq!(read().path,"sample.png");
+}
+
+#[test]
 fn project_first_capture_stays_private_through_rescan_backup_and_explicit_sharing(){
     let temp=tempfile::tempdir().unwrap();let root=temp.path().join("Design");fs::create_dir(&root).unwrap();let path=temp.path().join("library.sqlite");db::init(&path).unwrap();db::set_setting(&db::connect(&path).unwrap(),"root",root.to_str().unwrap()).unwrap();
     db::change(&path,change("create_project",vec![],None,Some("Client"),None)).unwrap();let project=db::load(&path,false).unwrap().projects[0].id;

@@ -439,6 +439,9 @@ fn materialize_component_folder(db:&Connection,id:i64)->Result<()> {
     if let Some(name)=previous.filter(|n|n.starts_with("Components / ")) {
         if name!="Components / Uncategorised"||component_memberships(db,id)?.is_empty(){db.execute("INSERT OR IGNORE INTO item_component_folders(item_id,name) VALUES(?,?)",params![id,name]).map_err(err)?;}
     }
+    // Retired folders act as the inbox until the next membership edit.
+    let retired=db.execute("DELETE FROM item_component_folders WHERE item_id=? AND name COLLATE NOCASE IN ('Components / Banners','Components / Cart & checkout','Components / Logo grids','Components / Videos')",[id]).map_err(err)?;
+    if retired>0&&component_memberships(db,id)?.is_empty(){db.execute("INSERT OR IGNORE INTO item_component_folders VALUES(?,'Components / Uncategorised')",[id]).map_err(err)?;}
     Ok(())
 }
 fn valid_name(name: &str) -> Result<&str> {
@@ -542,6 +545,8 @@ pub fn change(path: &Path, c: Change) -> Result<()> {
                     tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name IN ('Components / Headers','Components / Header','Components / Heroes','Components / Hero')",[id]).map_err(err)?;
                 }else if ["Components / Blog sections","Components / Blog archives","Components / Blog & News Sections"].iter().any(|name|name.eq_ignore_ascii_case(value)){
                     tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name COLLATE NOCASE IN ('Components / Blog sections','Components / Blog archives','Components / Blog & News Sections')",[id]).map_err(err)?;
+                }else if ["Components / Logins","Components / Signups","Components / Logins & Signups"].iter().any(|name|name.eq_ignore_ascii_case(value)){
+                    tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name COLLATE NOCASE IN ('Components / Logins','Components / Signups','Components / Logins & Signups')",[id]).map_err(err)?;
                 }else{tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name=?",params![id,value]).map_err(err)?;}
 
                 tx.execute("UPDATE item_categories SET name='Components / Uncategorised' WHERE item_id=?",[id]).map_err(err)?;
