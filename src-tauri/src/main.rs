@@ -762,3 +762,6 @@ fn main() {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod batch_regression_tests;

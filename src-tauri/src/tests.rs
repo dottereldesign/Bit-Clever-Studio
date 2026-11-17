@@ -42,8 +42,9 @@ fn image_thumbnail_rebuilds_old_tall_cache_and_preserves_the_original() {
     assert!(old.is_file());
     let reuse = library::media(&dbpath, &cache, std::path::Path::new("unused"), item.id, "thumbnail").unwrap();
     assert_eq!(reuse, generated);
+    // Unscoped legacy video thumbnails cannot be reused across libraries.
     db::connect(&dbpath).unwrap().execute("UPDATE items SET kind='video' WHERE id=?",[item.id]).unwrap();
-    assert_eq!(std::path::Path::new(&library::media(&dbpath, &cache, std::path::Path::new("unused"), item.id, "thumbnail").unwrap()),old.as_path(),"Video thumbnails retain the existing cache");
+    assert!(library::media(&dbpath, &cache, std::path::Path::new("unused"), item.id, "thumbnail").is_err());
     if let Some(output) = std::env::var_os("DESIGN_THUMBNAIL_QA_DIR") {
         let output = std::path::PathBuf::from(output);fs::create_dir_all(&output).unwrap();
         fs::copy(&old,output.join("before.jpg")).unwrap();fs::copy(&generated,output.join("after.jpg")).unwrap();

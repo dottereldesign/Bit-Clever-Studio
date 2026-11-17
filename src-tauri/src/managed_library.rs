@@ -60,6 +60,12 @@ pub fn rebase(path:&Path,folder:&Path)->Result<()> {
         tx.execute("UPDATE items SET path=?,thumbnail=? WHERE id=?",rusqlite::params![media,thumb,id]).map_err(err)?;
     }
     if let Some(saved)=db::setting(&tx,"appearance_preferences"){let mut prefs:serde_json::Value=serde_json::from_str(&saved).map_err(err)?;rewrite_paths(&mut prefs,&old,&folder);db::set_setting(&tx,"appearance_preferences",&serde_json::to_string(&prefs).map_err(err)?)?;}
+    for table in ["organisation_history","organisation_redo"] {
+        let patches={let mut q=tx.prepare(&format!("SELECT id,patches FROM {table}")).map_err(err)?;let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?))).map_err(err)?;rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?};
+        for (id,text) in patches {let mut value:serde_json::Value=serde_json::from_str(&text).map_err(err)?;rewrite_paths(&mut value,&old,&folder);tx.execute(&format!("UPDATE {table} SET patches=? WHERE id=?"),rusqlite::params![value.to_string(),id]).map_err(err)?;}
+    }
+    let recovery={let mut q=tx.prepare("SELECT item_id,original_path,recovery_path FROM duplicate_recovery").map_err(err)?;let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(err)?;rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?};
+    for (id,original,recovery) in recovery {let rebase=|s:String|Path::new(&s).strip_prefix(&old).map(|p|folder.join(p).to_string_lossy().into_owned()).unwrap_or(s);tx.execute("UPDATE duplicate_recovery SET original_path=?,recovery_path=? WHERE item_id=?",rusqlite::params![rebase(original),rebase(recovery),id]).map_err(err)?;}
     configure(&tx,&folder)?;tx.commit().map_err(err)
 }
 pub fn preferences(path:&Path)->Result<Option<serde_json::Value>>{let db=db::connect(path)?;if db::setting(&db,"managed_root").is_none(){return Ok(None);}Ok(Some(serde_json::from_str(&db::setting(&db,"appearance_preferences").unwrap_or_else(||"{}".into())).map_err(err)?))}

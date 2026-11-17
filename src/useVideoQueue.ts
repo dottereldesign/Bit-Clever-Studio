@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Channel, invoke } from "./diagnostics";
 import { enqueueVideos, persistVideoQueue, restoreVideoQueue, videoRequests, type VideoJob, type VideoProgress } from "./videoQueue";
 
-const storageKey = 'video-download-queue-v1';
+// Jobs are private to the selected library. Unscoped legacy jobs are never replayed.
+
 export default function useVideoQueue(enabled: boolean, saved: () => Promise<unknown>, report: (error:unknown)=>void) {
+  const storageKey = 'video-download-queue-v2:' + localStorage.getItem('active-library-root');
   const [jobs,setJobs]=useState<VideoJob[]>(()=>{try{return restoreVideoQueue(localStorage.getItem(storageKey));}catch{return [];}});
   const jobsRef=useRef(jobs), running=useRef<string|null>(null), persisted=useRef('');
   const savedRef=useRef(saved), reportRef=useRef(report);

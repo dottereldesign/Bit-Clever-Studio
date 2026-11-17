@@ -197,7 +197,9 @@ pub fn media(db_path: &Path, cache: &Path, ffmpeg: &Path, id: i64, mode: &str) -
     // Rebuild old low-resolution image thumbnails lazily, without deleting caches
     // used by older app builds or invalidating expensive video previews.
     let version = if mode == "thumbnail" && kind != "video" { "v2" } else { "v1" };
-    let target = cache.join(format!("{version}-{id}-{modified}-{}-{mode}.{suffix}", meta.len()));
+    use sha2::{Digest, Sha256};
+    let identity = format!("{:x}", Sha256::digest(format!("{}:{}", db_path.display(), source.display()).as_bytes()));
+    let target = cache.join(format!("{identity}-{version}-{id}-{modified}-{}-{mode}.{suffix}", meta.len()));
     if target.is_file() {
         return Ok(target.to_string_lossy().into_owned());
     }

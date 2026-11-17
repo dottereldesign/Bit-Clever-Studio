@@ -37,7 +37,7 @@ export function recordedRevenue(lib:Library,p:HomeOverviewPrefs,now=new Date()){
  const records=[...new Map((lib.studio??[]).filter(e=>e.kind==='lead'&&e.status==='won'&&typeof e.value==='number'&&Number.isFinite(e.value)).map(e=>[e.id,e])).values()];
  const matching=records.filter(e=>e.currency.trim().toUpperCase()===p.currency);
  const months=Array.from({length:p.months},(_,i)=>{const d=new Date(now.getFullYear(),now.getMonth()-p.months+1+i,1);return {key:localDay(d).slice(0,7),label:d.toLocaleDateString(undefined,{month:'short',year:'2-digit'}),value:0,count:0};});
- const recordDay=(e:typeof matching[number])=>{const stamp=e.closed_at??e.created;return stamp>0?localDay(new Date(stamp*1000)):'';};
+ const recordDay=(e:typeof matching[number])=>{const stamp=e.closed_at??e.created;return stamp>0?localDay(new Date(stamp)):'';};
  for(const e of matching){const day=recordDay(e);if(!validDay(day))continue;const bucket=months.find(m=>m.key===day.slice(0,7));if(bucket){bucket.value+=e.value!;bucket.count++;}}
  return {total:matching.reduce((sum,e)=>sum+e.value!,0),count:matching.length,months,undated:matching.filter(e=>!validDay(recordDay(e))).length,legacy:matching.filter(e=>!e.closed_at).length,otherCurrencies:records.length-matching.length};
 }

@@ -467,7 +467,7 @@ pub fn capture_with_progress(db_path: &Path, c: Capture, progress:&mut impl FnMu
             result.added = 1;
             tx.last_insert_rowid()
         };
-        if existing.is_none()&&c.studio.is_some(){tx.execute("UPDATE items SET project_only=1,source='Studio' WHERE id=?",[id]).map_err(err)?;}
+        if existing.is_none()&&(c.studio.is_some()||(c.project_only&&!c.projects.is_empty())){tx.execute("UPDATE items SET project_only=1,source='Studio' WHERE id=?",[id]).map_err(err)?;}
         let mut patches=attachment_history(&tx,id,&c)?;
         if existing.is_none(){patches.push(crate::history::Patch::Archived(id,true));}
         if existing.is_some(){
@@ -836,6 +836,23 @@ pub fn remove_duplicates(db_path: &Path, data: &Path, keeper: i64, ids: Vec<i64>
         tx.execute("INSERT INTO item_projects(item_id,label_id,favourite) SELECT ?,label_id,favourite FROM item_projects WHERE item_id=? ON CONFLICT(item_id,label_id) DO UPDATE SET favourite=MAX(favourite,excluded.favourite)",params![keeper,id]).map_err(err)?;
         tx.execute("INSERT OR IGNORE INTO item_tags(item_id,label_id) SELECT ?,label_id FROM item_tags WHERE item_id=?",params![keeper,id]).map_err(err)?;
         tx.execute("INSERT OR IGNORE INTO item_project_folders(item_id,folder_id) SELECT ?,folder_id FROM item_project_folders WHERE item_id=?",params![keeper,id]).map_err(err)?;
+        for table in ["item_design_folders","item_component_folders"] {
+            tx.execute(&format!("INSERT OR IGNORE INTO {table}(item_id,name) SELECT ?,name FROM {table} WHERE item_id=?"),params![keeper,id]).map_err(err)?;
+        }
+        tx.execute("INSERT INTO category_arrivals(item_id,name,added) SELECT ?,name,added FROM category_arrivals WHERE item_id=? ON CONFLICT(item_id,name) DO UPDATE SET added=MAX(added,excluded.added)",params![keeper,id]).map_err(err)?;
+        for mut overview in crate::project_overview::load(&tx)? {
+            if let Some(nodes)=&mut overview.moodboard {
+                let mut changed=false;
+                for node in nodes {if node.item_id==Some(id){node.item_id=Some(keeper);changed=true;}}
+                if changed {crate::project_overview::save(&tx,&overview)?;}
+            }
+        }
+        for mut record in crate::client_records::load(&tx)?.records {
+            if record.files.contains(&id) {
+                for file in &mut record.files {if *file==id {*file=keeper;}}
+                record.files.sort();record.files.dedup();crate::client_records::save_record(&tx,&record)?;
+            }
+        }
         crate::studio::replace_item(&tx,id,keeper)?;
         tx.execute("UPDATE items SET source_url=(SELECT source_url FROM items WHERE id=?) WHERE id=? AND source_url=''",params![id,keeper]).map_err(err)?;
         tx.execute(
