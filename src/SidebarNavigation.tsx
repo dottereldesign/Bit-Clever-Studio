@@ -1,8 +1,11 @@
 import { Children, cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useHistoryState } from './useAppHistory';
+import {useSidebarVisibility} from './useSidebarVisibility';
+import {mergeVisibleOrder} from './sidebarVisibilityData';
 
 export default function SidebarNavigation({order,children}:{order:string[];children:ReactNode}){
+ const [hidden]=useSidebarVisibility();
  const arranged=order.filter(n=>n!=="Projects");
  arranged.splice(Math.max(0,arranged.indexOf("General")),0,"Projects");
  const defaults=["Marketing","Leads","Clients","My Business",...arranged.filter(n=>!["Marketing","Leads","Research"].includes(n))];
@@ -14,13 +17,14 @@ export default function SidebarNavigation({order,children}:{order:string[];child
  if(!preferred.includes("Code")&&preferred.includes("Components"))preferred.splice(preferred.indexOf("Components")+1,0,"Code");
  if(!preferred.includes("Analytics")&&preferred.includes("Code"))preferred.splice(preferred.indexOf("Code")+1,0,"Analytics");
  if(!preferred.includes("My Business")&&preferred.includes("Clients"))preferred.splice(preferred.indexOf("Clients")+1,0,"My Business");
- const fullOrder=[...new Set([...preferred,...defaults,...names])].filter(n=>names.includes(n));
+ const allOrder=[...new Set([...preferred,...defaults,...names])].filter(n=>names.includes(n));
+ const fullOrder=allOrder.filter(name=>!hidden.includes(name));
  const root=useRef<HTMLDivElement>(null), cleanup=useRef<()=>void>(()=>{}), suppressClick=useRef(false);
  const positions=useRef(new Map<string,number>());
  const [visual,setVisual]=useState<{name:string;label:string;x:number;y:number;line:number;left:number;width:number}|null>(null);
  const [announcement,setAnnouncement]=useState('');
  const sections=()=>Array.from(root.current?.querySelectorAll<HTMLElement>(':scope > [data-section]')??[]);
- const commit=(next:string[])=>{if(next.join('|')===fullOrder.join('|'))return;positions.current=new Map(sections().map(el=>[el.dataset.section!,el.getBoundingClientRect().top]));setSaved(next);setAnnouncement('Sidebar order updated');};
+ const commit=(next:string[])=>{if(next.join('|')===fullOrder.join('|'))return;positions.current=new Map(sections().map(el=>[el.dataset.section!,el.getBoundingClientRect().top]));setSaved(mergeVisibleOrder(allOrder,next));setAnnouncement('Sidebar order updated');};
  useEffect(()=>()=>cleanup.current(),[]);
  useLayoutEffect(()=>{
   for(const el of sections()){const name=el.dataset.section!,top=el.getBoundingClientRect().top,previous=positions.current.get(name);
@@ -46,7 +50,7 @@ export default function SidebarNavigation({order,children}:{order:string[];child
    cancelAnimationFrame(frame);document.body.classList.remove('reordering-sidebar');section.classList.remove('sidebar-drag-source');setVisual(null);window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',cancel);window.removeEventListener('blur',cancel);window.removeEventListener('keydown',key,true);window.removeEventListener('dragstart',native,true);setTimeout(()=>{suppressClick.current=false;},0);cleanup.current=()=>{};};
   const up=()=>finish(true),cancel=()=>finish(),key=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();finish();}},native=(event:DragEvent)=>event.preventDefault();
   cleanup.current=cancel;window.addEventListener('pointermove',move,{passive:false});window.addEventListener('pointerup',up);window.addEventListener('pointercancel',cancel);window.addEventListener('blur',cancel);window.addEventListener('keydown',key,true);window.addEventListener('dragstart',native,true);
- }}>{nodes.sort((a,b)=>{const rank=(c:ReactNode)=>isValidElement<{name?:string}>(c)?fullOrder.indexOf(c.props.name??''):-1;return rank(a)-rank(b);}).map(c=>{
+ }}>{nodes.filter(c=>!isValidElement<{name?:string}>(c)||!c.props.name||!hidden.includes(c.props.name)).sort((a,b)=>{const rank=(c:ReactNode)=>isValidElement<{name?:string}>(c)?fullOrder.indexOf(c.props.name??''):-1;return rank(a)-rank(b);}).map(c=>{
   if(!isValidElement<{name?:string;reorder?:{up?:()=>void;down?:()=>void}}>(c)||!c.props.name)return c;
   const index=fullOrder.indexOf(c.props.name),shift=(delta:number)=>{const next=[...fullOrder];[next[index],next[index+delta]]=[next[index+delta],next[index]];commit(next);};
   return cloneElement(c,{reorder:{up:index>0?()=>shift(-1):undefined,down:index<fullOrder.length-1?()=>shift(1):undefined}});
