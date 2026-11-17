@@ -272,6 +272,18 @@ it('Logins and Signups share one folder and preserve the most recent arrival',()
  }
 });
 
+it('Products includes Product Grids once per item, including legacy links and arrivals',()=>{
+ equal(componentFolders.includes('Components / Product grids'),false);
+ equal(componentFolders.includes('Components / Products'),true);
+ const product={...items[0],id:61,category:'Components / Products',added:300};
+ const grid={...items[0],id:62,kind:'link' as const,category:'Components / Product grids',component_folders:['Components / Products','Components / Product grids'],category_added:{'Components / Product grids':500}};
+ const library=[product,grid];const index=createMembershipIndex(library);
+ for(const category of ['Components / Products','Components / Product grids']){
+  equal(filterItems(library,{...defaults,category},index).map(i=>i.id),[62,61]);
+  equal(filterItems(library,{...defaults,category}).map(i=>i.id),[62,61]);
+ }
+});
+
 it("stale inbox markers cannot keep a moved reference in the previous section",()=>{
  const templates={...items[0],category:"Components / Uncategorised",component_folders:["Components / Templates"],design_folders:[""]};
  equal(filterItems([templates],{...defaults,category:""}).length,0);

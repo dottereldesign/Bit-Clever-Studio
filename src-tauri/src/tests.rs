@@ -1321,6 +1321,19 @@ fn merged_auth_and_retired_component_memberships_preserve_history() {
 }
 
 #[test]
+fn products_removal_clears_legacy_grids_and_undo_preserves_other_folders() {
+ let temp=tempfile::tempdir().unwrap();let path=temp.path().join("products.sqlite");db::init(&path).unwrap();
+ db::connect(&path).unwrap().execute("INSERT INTO items(id,path,name,kind,source,added) VALUES(1,'sample.png','Product grid','image','',1)",[]).unwrap();
+ let apply=|action,value|db::change(&path,change(action,vec![1],None,None,value));
+ let read=||db::load(&path,false).unwrap().items.remove(0);
+ for folder in ["Components / Products","Components / Product grids","Components / Sponsors"] {apply("set_category",Some(folder)).unwrap();}
+ apply("remove_component_folder",Some("Components / Products")).unwrap();assert_eq!(read().component_folders,vec!["Components / Sponsors"]);
+ apply("undo_organisation",None).unwrap();assert_eq!(read().component_folders.len(),3);
+ apply("redo_organisation",None).unwrap();assert_eq!(read().component_folders,vec!["Components / Sponsors"]);
+ assert_eq!(read().path,"sample.png");
+}
+
+#[test]
 fn project_first_capture_stays_private_through_rescan_backup_and_explicit_sharing(){
     let temp=tempfile::tempdir().unwrap();let root=temp.path().join("Design");fs::create_dir(&root).unwrap();let path=temp.path().join("library.sqlite");db::init(&path).unwrap();db::set_setting(&db::connect(&path).unwrap(),"root",root.to_str().unwrap()).unwrap();
     db::change(&path,change("create_project",vec![],None,Some("Client"),None)).unwrap();let project=db::load(&path,false).unwrap().projects[0].id;

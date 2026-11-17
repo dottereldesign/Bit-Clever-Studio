@@ -9,7 +9,7 @@ export const componentGroups: Record<string, string[]> = {
   "Interactive": ["Buttons", "Sliders", "Tabs", "Accordions"],
   "Forms": ["Logins & Signups", "Email opt-ins"],
   "Blog & portfolio": ["Blog & News Sections", "Single posts", "Portfolio headers", "Portfolio sections"],
-  "Shop": ["Products", "Product grids"],
+  "Shop": ["Products"],
 };
 
 export const componentKey = (folder: string) => prefix + folder;
@@ -19,5 +19,6 @@ export const isWebDesign = (name: string) => /^web[\s_-]*design$/i.test(name.tri
 export const isHeaderFolder = (name:string) => /^Components \/ (Heroes|Hero|Headers|Header)$/.test(name);
 export const isBlogFolder = (name:string) => /^Components \/ (Blog sections|Blog archives|Blog & News Sections)$/i.test(name);
 export const isAuthFolder = (name:string) => /^Components \/ (Logins|Signups|Logins & Signups)$/i.test(name);
+export const isProductsFolder = (name:string) => /^Components \/ (Products|Product grids)$/i.test(name);
 export const isRetiredComponentFolder = (name:string) => /^Components \/ (Banners|Cart & checkout|Logo grids|Videos)$/i.test(name);
-export const filingCategory = (name: string) => name === allComponents || isWebDesign(name) || isRetiredComponentFolder(name) ? componentInbox : isHeaderFolder(name) ? componentKey("Headers") : isBlogFolder(name) ? componentKey("Blog & News Sections") : isAuthFolder(name) ? componentKey("Logins & Signups") : name;
+export const filingCategory = (name: string) => name === allComponents || isWebDesign(name) || isRetiredComponentFolder(name) ? componentInbox : isHeaderFolder(name) ? componentKey("Headers") : isBlogFolder(name) ? componentKey("Blog & News Sections") : isAuthFolder(name) ? componentKey("Logins & Signups") : isProductsFolder(name) ? componentKey("Products") : name;

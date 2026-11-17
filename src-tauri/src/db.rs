@@ -547,6 +547,8 @@ pub fn change(path: &Path, c: Change) -> Result<()> {
                     tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name COLLATE NOCASE IN ('Components / Blog sections','Components / Blog archives','Components / Blog & News Sections')",[id]).map_err(err)?;
                 }else if ["Components / Logins","Components / Signups","Components / Logins & Signups"].iter().any(|name|name.eq_ignore_ascii_case(value)){
                     tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name COLLATE NOCASE IN ('Components / Logins','Components / Signups','Components / Logins & Signups')",[id]).map_err(err)?;
+                }else if ["Components / Products","Components / Product grids"].iter().any(|name|name.eq_ignore_ascii_case(value)){
+                    tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name COLLATE NOCASE IN ('Components / Products','Components / Product grids')",[id]).map_err(err)?;
                 }else{tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name=?",params![id,value]).map_err(err)?;}
 
                 tx.execute("UPDATE item_categories SET name='Components / Uncategorised' WHERE item_id=?",[id]).map_err(err)?;
