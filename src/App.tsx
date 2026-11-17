@@ -132,7 +132,7 @@ import type { GeneralDraft,GeneralOption } from './GeneralEditor';
 import CollectionView from './CollectionView';
 import { appHistory } from "./appHistory";
 import { useHistoryState, useHistory, HistoryButtons } from "./useAppHistory";
-import { allComponents, componentFolders as builtInComponentFolders, componentInbox, filingCategory, isComponent } from "./componentsLibrary";
+import { allComponents, componentFolders as builtInComponentFolders, componentInbox, filingCategory, isComponent, isBlogFolder } from "./componentsLibrary";
 import CategoryPicker from "./CategoryPicker";
 import {designFoldersOf, componentFoldersOf, categoryOf, categoryLabel, libraryCategories, isTableCollection, isTableLink, createMembershipIndex} from "./model";
 
@@ -364,6 +364,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
   const stopHoverRef=useRef<()=>void>(()=>{});
   const setHoverId=useCallback((_id:null)=>stopHoverRef.current(),[]);
   const [category,setCategory] = useState<string|null>(savedView?.category??null);
+  useEffect(()=>{if(category&&isBlogFolder(category)&&category!==filingCategory(category))setCategory(filingCategory(category));},[category]);
   const [categoryUndo,setCategoryUndo] = useState<[number,string][]|null>(null);
   const categoryUndoNotice = useRef("");
   const [categoryDrop,setCategoryDrop] = useState<string|null>(null);
@@ -605,7 +606,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
     document.addEventListener('keydown',key,true);document.addEventListener('keyup',end,true);document.addEventListener('pointerdown',down,true);document.addEventListener('pointerup',end);document.addEventListener('pointercancel',end);window.addEventListener('blur',end);
     return ()=>{document.removeEventListener('keydown',key,true);document.removeEventListener('keyup',end,true);document.removeEventListener('pointerdown',down,true);document.removeEventListener('pointerup',end);document.removeEventListener('pointercancel',end);window.removeEventListener('blur',end);};
   },[]);
-  const componentFolders=useMemo(()=>[...new Set([...builtInComponentFolders,...(lib.categories??[]).filter(isComponent),...lib.items.flatMap(componentFoldersOf)])],[lib]);
+  const componentFolders=useMemo(()=>[...new Set([...builtInComponentFolders,...(lib.categories??[]).filter(isComponent),...lib.items.flatMap(componentFoldersOf)].map(filingCategory))],[lib]);
   const categories = useMemo(()=>libraryCategories(lib),[lib]);
   const categoryCounts = useMemo(() => new Map([...membershipIndex.categories].map(([name,items])=>[name,items.length])), [membershipIndex]);
   const generalCounts=useMemo(()=>{const counts=new Map<string,number>();for(const item of lib.items){counts.set(item.source,(counts.get(item.source)??0)+1);if(item.kind==='link'&&!isCollectionLink(item))counts.set('__links',(counts.get('__links')??0)+1);if(item.kind==='video'&&(item.source==='Videos'||item.source.startsWith('Videos/')))counts.set('__videos',(counts.get('__videos')??0)+1);}return counts;},[lib.items]);

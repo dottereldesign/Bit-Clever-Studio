@@ -232,6 +232,15 @@ it("Hero and Headers share one Header folder without duplicate references",()=>{
  equal(filterItems([hero],{...defaults,category:"Components / Uncategorised"}),[]);
 });
 
+it("Blog sections and archives share Blog & News Sections without duplicates",()=>{
+ const section={...items[0],id:31,category:'Components / Blog sections',component_folders:['Components / Blog sections','Components / Blog archives'],category_added:{'Components / Blog archives':500}};
+ const archive={...items[0],id:32,category:'Components / Blog archives',added:300};
+ for(const category of ['Components / Blog sections','Components / Blog archives','Components / Blog & News Sections']){
+  equal(filterItems([archive,section],{...defaults,category}).map(i=>i.id),[31,32]);
+  equal(filterItems([archive,section],{...defaults,category},createMembershipIndex([archive,section])).map(i=>i.id),[31,32]);
+ }
+});
+
 it("stale inbox markers cannot keep a moved reference in the previous section",()=>{
  const templates={...items[0],category:"Components / Uncategorised",component_folders:["Components / Templates"],design_folders:[""]};
  equal(filterItems([templates],{...defaults,category:""}).length,0);

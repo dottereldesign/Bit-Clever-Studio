@@ -8,7 +8,7 @@ export const componentGroups: Record<string, string[]> = {
   "Content & media": ["Image boxes", "Icon boxes", "Text blocks", "Galleries", "Videos", "Steps", "Timelines"],
   "Interactive": ["Buttons", "Sliders", "Tabs", "Accordions"],
   "Forms": ["Signups", "Logins", "Email opt-ins"],
-  "Blog & portfolio": ["Blog sections", "Single posts", "Blog archives", "Portfolio headers", "Portfolio sections"],
+  "Blog & portfolio": ["Blog & News Sections", "Single posts", "Portfolio headers", "Portfolio sections"],
   "Shop": ["Products", "Product grids", "Cart & checkout"],
 };
 
@@ -17,4 +17,5 @@ export const isComponent = (name: string) => name.startsWith(prefix);
 export const componentFolders = [componentInbox, ...Object.values(componentGroups).flat().map(componentKey)];
 export const isWebDesign = (name: string) => /^web[\s_-]*design$/i.test(name.trim());
 export const isHeaderFolder = (name:string) => /^Components \/ (Heroes|Hero|Headers|Header)$/.test(name);
-export const filingCategory = (name: string) => name === allComponents || isWebDesign(name) ? componentInbox : isHeaderFolder(name) ? componentKey("Headers") : name;
+export const isBlogFolder = (name:string) => /^Components \/ (Blog sections|Blog archives|Blog & News Sections)$/i.test(name);
+export const filingCategory = (name: string) => name === allComponents || isWebDesign(name) ? componentInbox : isHeaderFolder(name) ? componentKey("Headers") : isBlogFolder(name) ? componentKey("Blog & News Sections") : name;

@@ -540,6 +540,8 @@ pub fn change(path: &Path, c: Change) -> Result<()> {
                 materialize_component_folder(&tx,id)?;
                 if ["Components / Headers","Components / Header","Components / Heroes","Components / Hero"].contains(&value){
                     tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name IN ('Components / Headers','Components / Header','Components / Heroes','Components / Hero')",[id]).map_err(err)?;
+                }else if ["Components / Blog sections","Components / Blog archives","Components / Blog & News Sections"].iter().any(|name|name.eq_ignore_ascii_case(value)){
+                    tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name COLLATE NOCASE IN ('Components / Blog sections','Components / Blog archives','Components / Blog & News Sections')",[id]).map_err(err)?;
                 }else{tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name=?",params![id,value]).map_err(err)?;}
 
                 tx.execute("UPDATE item_categories SET name='Components / Uncategorised' WHERE item_id=?",[id]).map_err(err)?;

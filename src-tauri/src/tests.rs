@@ -1287,6 +1287,20 @@ fn component_links_persist_and_undo_memberships() {
 }
 
 #[test]
+fn merged_blog_folder_removal_preserves_other_memberships_and_undo() {
+ let temp=tempfile::tempdir().unwrap();let path=temp.path().join("blog.sqlite");db::init(&path).unwrap();
+ db::connect(&path).unwrap().execute("INSERT INTO items(id,path,name,kind,source,added) VALUES(1,'https://example.com/blog','Blog inspiration','link','',1)",[]).unwrap();
+ let apply=|action,value|db::change(&path,change(action,vec![1],None,None,value));
+ for folder in ["Components / Blog sections","Components / Blog archives","Components / Blog & News Sections","Components / Headers"] {apply("set_category",Some(folder)).unwrap();}
+ let read=||db::load(&path,false).unwrap().items.remove(0);
+ apply("remove_component_folder",Some("Components / Blog & News Sections")).unwrap();
+ assert_eq!(read().component_folders,vec!["Components / Headers"]);
+ apply("undo_organisation",None).unwrap();assert_eq!(read().component_folders.len(),4);
+ apply("redo_organisation",None).unwrap();assert_eq!(read().component_folders,vec!["Components / Headers"]);
+ assert_eq!(read().path,"https://example.com/blog");
+}
+
+#[test]
 fn project_first_capture_stays_private_through_rescan_backup_and_explicit_sharing(){
     let temp=tempfile::tempdir().unwrap();let root=temp.path().join("Design");fs::create_dir(&root).unwrap();let path=temp.path().join("library.sqlite");db::init(&path).unwrap();db::set_setting(&db::connect(&path).unwrap(),"root",root.to_str().unwrap()).unwrap();
     db::change(&path,change("create_project",vec![],None,Some("Client"),None)).unwrap();let project=db::load(&path,false).unwrap().projects[0].id;
