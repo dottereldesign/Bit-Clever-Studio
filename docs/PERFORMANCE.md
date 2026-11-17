@@ -4,7 +4,7 @@ Diagnostics are opt-in and stop when the command finishes. They do not install a
 
 ## Browser workload
 
-Run `npm run diagnose:performance`. It starts an isolated headless Chrome and temporary Vite server, uses 1,200 synthetic thumbnails with varied proportions, scrolls, and repeatedly opens/closes the side preview. It checks for overlapping cards and records React commits/render time, ResizeObserver creation/callbacks, layout reads, thumbnail requests, peak mounted cards and browser long tasks. The server and temporary browser profile are cleaned up afterward. Avoid running other browser tests on port 1422 at the same time.
+Run `npm run diagnose:performance`. It starts an isolated headless Chrome and temporary Vite server, uses 1,200 synthetic thumbnails with varied proportions, scrolls, and repeatedly selects a thumbnail and opens/closes its Space preview. It checks for overlapping cards and records React commits/render time, ResizeObserver creation/callbacks, layout reads, thumbnail requests, peak mounted cards and browser long tasks. The server and temporary browser profile are cleaned up afterward. Avoid running other browser tests on port 1422 at the same time.
 
 To keep named comparisons in PowerShell:
 
@@ -30,6 +30,8 @@ The original masonry virtualizer multiplied overscan by the number of lanes afte
 
 The media grid now calculates non-overlapping positions from cached image proportions, batches image-size updates once per animation frame, and mounts only thumbnails near the visible viewport. Resizing recalculates positions without remounting the grid. Still-image hover uses CSS; motion previews retain hover state. Image dimensions are cached in memory with a bounded entry count, without storing user paths or image bytes. All media categories and project galleries use this layout; thumbnail link boards use responsive CSS columns.
 
+The current workload uses gallery Space preview; the historical runs below used the older click-to-open side preview. Their numbers are historical evidence, not a directly comparable baseline for the revised workload.
+
 The two retained reports each record one run on 3 November 2026 UTC at 1920 × 1080, using headless Chrome and the Vite development server. The gallery change landed in `d4e7673` (parent `86546f4`). The reports did not record the tested checkout SHAs, machine specifications or Chrome version. For future comparisons, record those details and the number of repetitions alongside each result.
 
 | Measurement | Before | After |
@@ -41,4 +43,4 @@ The two retained reports each record one run on 3 November 2026 UTC at 1920 × 1
 | Thumbnail requests | 228 | 117 |
 | Long-task time | 11,304 ms | 1,656 ms |
 
-Overlap checks, viewer return/focus, side-preview breakpoints, link-board interactions and drag operations should accompany future gallery changes. `npm run test:grid`, `npm run test:preview`, `npm run test:boards` and `npm run test:drag` cover those workflows. Run checks using port 1421 sequentially; the side-preview check uses port 1422.
+Overlap checks, Space-preview return/focus, full-viewer breakpoints, link-board interactions and drag operations should accompany future gallery changes. `npm run test:grid`, `npm run test:preview`, `npm run test:boards` and `npm run test:drag` cover those workflows. Run checks using port 1421 sequentially; the side-preview check uses port 1422.

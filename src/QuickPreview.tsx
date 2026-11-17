@@ -7,7 +7,15 @@ export default function QuickPreview({item,close}:{item:Item;close:()=>void}) {
   const panel=useRef<HTMLElement>(null);
   const [url,setUrl]=useState("");
   const [failed,setFailed]=useState(false);
-  useEffect(()=>{const previous=document.activeElement as HTMLElement|null;panel.current?.focus();return()=>previous?.focus({preventScroll:true});},[]);
+  // Capture before the background becomes inert, including StrictMode's effect replay.
+  const previousFocus=useRef(document.activeElement as HTMLElement|null);
+  useEffect(()=>{
+    panel.current?.focus();
+    return()=>{requestAnimationFrame(()=>{
+      if(!panel.current?.isConnected&&previousFocus.current?.isConnected)
+        previousFocus.current.focus({preventScroll:true});
+    });};
+  },[]);
   useEffect(()=>{
     const abort=new AbortController();setUrl("");setFailed(false);
     if(item.kind==="link"&&!item.thumbnail)return;

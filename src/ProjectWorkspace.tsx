@@ -80,7 +80,7 @@ export default function ProjectWorkspace({relatedStudio,fileToolbar,section,chan
   const open=(item:Item)=>void (item.kind==='link'?openUrl(item.path):invoke('open_project_file',{id:item.id})).catch(report);
   const renderFile=(item:Item)=><div key={item.id} role="row" tabIndex={0} data-item-id={item.id} aria-selected={selected.has(item.id)} className={`project-file ${selected.has(item.id)?'selected':''}`} draggable
     onClick={event=>select(item,event)} onDoubleClick={()=>preview(item)} onContextMenu={event=>{event.preventDefault();menu(item,event);}}
-    onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();preview(item);}}}
+    onKeyDown={event=>{if(event.key==='Enter'&&event.target===event.currentTarget){event.preventDefault();preview(item);}}}
     onDragStart={event=>{event.dataTransfer.setData('application/design-items',JSON.stringify(selected.has(item.id)?[...selected]:[item.id]));event.dataTransfer.effectAllowed='copyMove';}}>
     <span className="project-file-name" title={item.path.split(/[\\/]/).at(-1)}><span className="project-file-thumb"><FileThumb item={item}/></span><span>{item.name}{item.missing&&<small>Missing file</small>}</span></span>
     {prefs.columns.includes('type')&&<span className="project-file-type">{fileType(item)}</span>}

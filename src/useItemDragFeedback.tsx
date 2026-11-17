@@ -113,7 +113,7 @@ export default function useItemDragFeedback(options:Options) {
     suppressClick.current=false;
     if(!latest.current.enabled||e.button!==0||!e.isPrimary)return;
     const target=e.target instanceof Element?e.target:null;
-    const card=target?.closest<HTMLElement>('.card[data-item-id],.collection-reference[data-item-id],.links-table tbody tr[data-item-id]');
+    const card=target?.closest<HTMLElement>('.card[data-item-id],.collection-reference[data-item-id],.links-table tbody tr[data-item-id],.project-file[data-item-id]');
     if(!card||target?.closest('button:not(.card-open):not(.collection-reference-open):not(.link-name):not(.link-url),input,textarea,select'))return;
     pointer.current={id:e.pointerId,ids:latest.current.ids(Number(card.dataset.itemId)),startX:e.clientX,startY:e.clientY,x:e.clientX,y:e.clientY,active:false,host:e.currentTarget};
   };

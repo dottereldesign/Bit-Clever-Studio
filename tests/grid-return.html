@@ -29,77 +29,40 @@ async function until(test, label) {
   while (!test()) { if (performance.now() - start > 4000) throw Error(`Timed out: ${label}`); await pause(16); }
 }
 function assert(value, label) { if (!value) throw Error(label); }
-const viewer = () => document.querySelector('.viewer');
-function key(value) { document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true })); }
+const preview = () => document.querySelector('.quick-preview');
+function key(value) { document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true })); }
+const name = id => `Reference ${String(id).padStart(4, '0')}`;
 async function advance(count, direction = 'ArrowRight') {
-  await pause(100);
-  for (let n = 0; n < count; n++) {
-    window.__checkProgress = `advance ${n}/${count}`;
-    const before = viewer()?.dataset.itemId;
+  for (let n=0;n<count;n++) {
+    const before=preview()?.querySelector('header strong').textContent;
     key(direction);
-    await until(() => viewer()?.dataset.itemId !== before, 'advance viewer');
+    await until(()=>preview()?.querySelector('header strong').textContent!==before,'Advance preview');
   }
 }
-async function returned(id, close = 'Escape') {
-  window.__checkProgress = `return ${id}`;
-  if (close === 'Escape') key('Escape');
-  else document.querySelector('.viewer [aria-label="Close viewer"]').click();
-  await until(() => !viewer() && document.activeElement?.closest('.card')?.dataset.itemId === String(id), `focus item ${id}`);
-  const card = document.activeElement.closest('.card');
-  const rect = card.getBoundingClientRect(), area = document.querySelector('.content').getBoundingClientRect();
-  assert(rect.top >= area.top - 1 && rect.bottom <= area.bottom + 1, `Returned item ${id} is not fully visible`);
-  assert(card.classList.contains('returned'), `Returned item ${id} is not highlighted`);
-  return document.querySelector('.content').scrollTop;
-}
-const checks = [];
-const errors = [];
-window.addEventListener('error', (event) => errors.push(event.message));
+const checks=[];
 try {
-  await until(() => document.querySelector('.card-open'), 'library render');
-  await pause(100);
-  document.querySelector('.card-open').click();
-  await until(() => viewer(), 'viewer opens');
+  await until(()=>document.querySelector('.card-open'),'Gallery render');
+  const content=document.querySelector('.content');
+  const open=async()=>{const button=document.querySelector('.card-open');button.click();button.focus();await pause(30);assert(button.closest('.card').classList.contains('selected'),'Click did not select');assert(!document.querySelector('.viewer'),'Click opened full viewer');key(' ');await until(()=>preview(),'Space preview');return button;};
+  const origin=await open(), scroll=content.scrollTop;
   await advance(200);
-  assert(viewer().dataset.itemId === '220', 'Wrong item after 200 advances');
-  const distantScroll = await returned(220);
-  assert(distantScroll > 2000, 'Grid did not leave its original scroll position');
-  checks.push('Escape after 200 images returns to the visible, focused and highlighted thumbnail');
-
-  window.__awaitNativeEnter = true;
-  await until(() => viewer()?.dataset.itemId === '220', 'focused thumbnail reopens');
-  window.__awaitNativeEnter = false;
-  await returned(220, 'X');
-  checks.push('Enter reopens the focused thumbnail; X follows it on repeated close');
-  await pause(2100);
-  assert(!document.querySelector('.card.returned'), 'Temporary highlight did not clear');
-  checks.push('Highlight clears after two seconds');
-
-  const source = document.querySelector('[aria-label="Filter by category"]');
-  source.value = ''; source.dispatchEvent(new Event('change', { bubbles: true }));
-  const search = document.querySelector('[aria-label="Search library"]');
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, 'Reference');
-  search.dispatchEvent(new Event('input', { bubbles: true }));
-  const sort = document.querySelector('[aria-label="Sort items"]');
-  sort.value = 'name'; sort.dispatchEvent(new Event('change', { bubbles: true }));
-  await until(() => document.querySelector('.card')?.dataset.itemId === '1', 'name sort and filter');
-  document.querySelector('.card-open').click();
-  await until(() => viewer()?.dataset.itemId === '1', 'filtered viewer');
-  await advance(200);
-  await returned(201, 'X');
-  assert(source.value === '' && search.value === 'Reference' && sort.value === 'name', 'Filters or sorting changed');
-  checks.push('X after 200 images follows name order and preserves search, source and sort');
-
-  document.activeElement.click(); await until(() => viewer(), 'reopen for wrap');
-  await advance(220);
-  assert(viewer().dataset.itemId === '1', 'Viewer did not wrap to first image');
-  await returned(1);
-  document.activeElement.click(); await until(() => viewer(), 'reopen first');
-  await advance(1, 'ArrowLeft');
-  assert(viewer().dataset.itemId === '420', 'Viewer did not wrap to last image');
-  const endScroll = await returned(420);
-  checks.push('First and last rows remain visible after wrapping in either direction');
-  document.getElementById('check-result').textContent = JSON.stringify({ ok: true, checks, distantScroll, endScroll, width: innerWidth });
-} catch (error) {
-  document.getElementById('check-result').textContent = JSON.stringify({ ok: false, checks, error: String(error), viewer: viewer()?.dataset.itemId, focus: document.activeElement?.outerHTML.slice(0, 300), scroll: document.querySelector('.content')?.scrollTop, cards: [...document.querySelectorAll('.card')].map(el => el.dataset.itemId), errors });
-}
+  assert(preview().querySelector('header strong').textContent===name(220),'Wrong item after 200 advances');
+  key('Escape');await until(()=>!preview()&&document.activeElement===origin,'Escape restores origin focus');
+  assert(content.scrollTop===scroll,'Preview changed gallery scroll');
+  checks.push('Gallery click selects; 200 Space-preview advances; Escape restores originating focus and scroll');
+  key(' ');await until(()=>preview(),'Reopen focused reference');
+  document.querySelector('[aria-label="Close quick preview"]').click();await until(()=>!preview()&&document.activeElement===origin,'Close button restores focus');
+  const search=document.querySelector('[aria-label="Search library"]');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(search,'Reference 00');search.dispatchEvent(new Event('input',{bubbles:true}));
+  const sort=document.querySelector('[aria-label="Sort items"]');sort.value='name';sort.dispatchEvent(new Event('change',{bubbles:true}));
+  await until(()=>document.querySelector('.card')?.dataset.itemId==='1','Filtered name order');
+  const filteredOrigin=await open();await advance(98);
+  assert(preview().querySelector('header strong').textContent===name(99),'Filtered preview order');
+  await advance(1);assert(preview().querySelector('header strong').textContent===name(1),'Forward wrap');
+  await advance(1,'ArrowLeft');assert(preview().querySelector('header strong').textContent===name(99),'Backward wrap');
+  key(' ');await until(()=>!preview()&&document.activeElement===filteredOrigin,'Space closes and restores focus');
+  assert(search.value==='Reference 00'&&sort.value==='name','Search or sort lost');
+  checks.push('Close button and Space return focus; filtered name order, bidirectional wrap and selection remain intact');
+  document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks,width:innerWidth});
+}catch(error){document.getElementById('check-result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack,checks});}
 </script></body></html>

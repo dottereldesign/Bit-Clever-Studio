@@ -4,7 +4,7 @@ import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
 const fixture = process.argv[2] ?? 'grid-return';
-if (!['app-themes','my-business', 'sidebar-tools', 'customise-tab-order', 'analytics-reports', 'default-appearance', 'startup', 'analytics', 'home-overview', 'close-lead', 'customise-layouts', 'tab-styles', 'cta-buttons', 'add-contact', 'home-logo', 'client-sidebar', 'calendar-setup', 'clients-performance', 'branding', 'clients', 'sidebar-reorder', 'customise-motion', 'research', 'leads-tour', 'calendar-sync', 'studio', 'sidebar-styles', 'moodboard', 'project-workspace', 'project-folder-drag', 'thumbnail-readiness', 'storage-cache', 'collection-performance', 'settings-page', 'diagnostics', 'project-navigation', 'project-folders', 'link-categories', 'thumbnail-click', 'colour-picker', 'website-scroll', 'hover-preview', 'image-drop', 'clipboard-scroll', 'view-session', 'thumbnail-enlargement', 'component-links', 'customization', 'app-history', 'home-styles', 'thumbnail-loading', 'performance', 'grid-return', 'copy-resources', 'link-boards', 'video-download', 'categories', 'workflow-tools', 'pointer-moves', 'wide-preview', 'library-export'].includes(fixture)) throw Error('Unknown browser test fixture');
+if (!['library-isolation','app-themes','my-business', 'sidebar-tools', 'customise-tab-order', 'analytics-reports', 'default-appearance', 'startup', 'analytics', 'home-overview', 'close-lead', 'customise-layouts', 'tab-styles', 'cta-buttons', 'add-contact', 'home-logo', 'client-sidebar', 'calendar-setup', 'clients-performance', 'branding', 'clients', 'sidebar-reorder', 'customise-motion', 'research', 'leads-tour', 'calendar-sync', 'studio', 'sidebar-styles', 'moodboard', 'project-workspace', 'project-folder-drag', 'thumbnail-readiness', 'storage-cache', 'collection-performance', 'settings-page', 'diagnostics', 'project-navigation', 'project-folders', 'link-categories', 'thumbnail-click', 'colour-picker', 'website-scroll', 'hover-preview', 'image-drop', 'clipboard-scroll', 'view-session', 'thumbnail-enlargement', 'component-links', 'customization', 'app-history', 'home-styles', 'thumbnail-loading', 'performance', 'grid-return', 'copy-resources', 'link-boards', 'video-download', 'categories', 'workflow-tools', 'pointer-moves', 'wide-preview', 'library-export'].includes(fixture)) throw Error('Unknown browser test fixture');
 const port = ["wide-preview", "performance"].includes(fixture) ? "1422" : "1421";
 const testUrl = `http://127.0.0.1:${port}/tests/${fixture}.html`;
 
@@ -110,7 +110,15 @@ try {
             await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r', windowsVirtualKeyCode: 13 }, sessionId);
             await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, sessionId);
           }
-          if (state.value?.report && state.value.report !== 'pending') { result = JSON.parse(state.value.report); break; }
+          if (state.value?.report && state.value.report !== 'pending') {
+            result = JSON.parse(state.value.report);
+            if (!result.ok) {
+              await mkdir('.tools/checks', {recursive: true});
+              const shot = await call('Page.captureScreenshot', {format: 'png'}, sessionId);
+              await writeFile(`.tools/checks/${fixture}-failed-${dimensions}.png`, Buffer.from(shot.data, 'base64'));
+            }
+            break;
+          }
           await new Promise(resolve => setTimeout(resolve, 100));
         }
         if (!result) {

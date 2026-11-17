@@ -858,7 +858,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
   },[searchOpen]);
   useEffect(()=>{
     const key=(e:KeyboardEvent)=>{
-      if(e.altKey||modal||capture||videoDialog||duplicatesOpen||removedOpen||libraryExportOpen||storageOpen||extraDialog||customTab||quickPreview!==null||itemMenu||viewer!==null)return;
+      if(e.altKey||modal||capture||videoDialog||duplicatesOpen||removedOpen||libraryExportOpen||storageOpen||extraDialog||customTab||quickPreview!==null||itemMenu||(viewer!==null&&!widePreview))return;
       if(document.querySelector('.project-dialog-backdrop')||(e.target as HTMLElement)?.closest('.link-rating,.project-folder-dialog'))return;
       const typing=(e.target as HTMLElement)?.closest("input,textarea,select,[contenteditable=true]");
       const command=e.ctrlKey||e.metaKey;
@@ -868,7 +868,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
       }
     };
     window.addEventListener("keydown",key);return()=>window.removeEventListener("keydown",key);
-  },[studioView,modal,capture,videoDialog,duplicatesOpen,removedOpen,libraryExportOpen,storageOpen,extraDialog,customTab,quickPreview,itemMenu,viewer,homeView,project,projectSection,generalEntry]);
+  },[studioView,modal,capture,videoDialog,duplicatesOpen,removedOpen,libraryExportOpen,storageOpen,extraDialog,customTab,quickPreview,itemMenu,viewer,widePreview,homeView,project,projectSection,generalEntry]);
   const showCaptureReceipt=useCallback((result:CaptureResult, next:Library, targetCategory:string|null, targetProject?:{project:number;folder:number|null})=>{
     const saved=next.items.filter(i=>result.ids.includes(i.id));
     if(!saved.length)return;

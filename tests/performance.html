@@ -18,6 +18,8 @@ let callbackId=0;
 window.isTauri=true;
 window.__TAURI_INTERNALS__={transformCallback:()=>++callbackId,convertFileSrc:path=>image(path),invoke:async(command,args)=>{
   if(command==='get_library')return library;
+  if(['save_library_preferences','diagnostics_record'].includes(command))return;
+  if(command==='storage_usage')return {bytes:0,data_bytes:0,library_bytes:0,app_bytes:0};
   if(command==='get_media'){metrics.mediaCalls++;return String(args.id);}
   if(command.startsWith('plugin:event|'))return ++callbackId;
   throw Error(command);
@@ -37,10 +39,10 @@ try {
   for(let n=0;n<12;n++){content.scrollTop=n*450;await pause(80);sample();}
   content.scrollTop=0;await pause(300);
   for(let n=0;n<3;n++){
-    document.querySelector('.card-open').click();await until(()=>document.querySelector('.viewer-docked'),'Dock');await noOverlap();
-    document.querySelector('[aria-label="Close viewer"]').click();await until(()=>!document.querySelector('.viewer'),'Close');await noOverlap();
+    document.querySelector('.card-open').click();document.querySelector('.card-open').focus();document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:' ',bubbles:true}));await until(()=>document.querySelector('.quick-preview'),'Space preview');await noOverlap();
+    document.querySelector('.quick-preview').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await until(()=>!document.querySelector('.quick-preview'),'Close');await noOverlap();
   }
-  document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks:['1200 mixed-aspect thumbnails, scroll, repeated dock/undock without overlaps'],metrics});
+  document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks:['1200 mixed-aspect thumbnails, scroll, repeated Space preview/close without overlaps'],metrics});
 }catch(error){document.getElementById('check-result').textContent=JSON.stringify({ok:false,error:String(error),metrics});}
 longTasks.disconnect();
 </script></body></html>
