@@ -1053,7 +1053,7 @@ fn cancelled_video_download_stops_process_and_cleans_staging() {
     db::set_setting(&db::connect(&path).unwrap(),"root_videos",&root.to_string_lossy()).unwrap();
     let binaries=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("binaries");
     let result=crate::download::run(&path,&binaries.join("yt-dlp.exe"),&binaries.join("ffmpeg.exe"),crate::download::Request{url:"https://example.com/cancel-before-connect".into(),projects:vec![],tags:vec![]},&std::sync::atomic::AtomicBool::new(true),&mut |_|{});
-    assert_eq!(result.err().unwrap(),"Download cancelled.");assert!(db::load(&path,false).unwrap().items.is_empty());assert_eq!(fs::read_dir(temp.path().join("video-downloads")).unwrap().count(),0);
+    assert_eq!(result.err().unwrap(),"Download cancelled.");assert!(db::load(&path,false).unwrap().items.is_empty());assert_eq!(fs::read_dir(temp.path().join("video-downloads")).map(|r|r.count()).unwrap_or(0),0);
 }
 
 #[test]

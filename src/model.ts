@@ -40,6 +40,7 @@ export const isTableLink = (item: Item) => item.kind === "link" && (item.source 
 export const isCollectionLink = (item: Item) => item.source === "Studio" || isResource(item) || isBoardLink(item) || (item.kind === "link" && componentFoldersOf(item).length>0);
 export const canCopyImage = (item: Item) => item.kind === "image" || item.kind === "animation";
 export type Library = {
+  maintenance_warning?:string|null;
   studio?:import("./studio").StudioEntry[];
   client_records?:ClientData;
   project_overviews?: ProjectOverviewData[];

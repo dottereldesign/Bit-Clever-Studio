@@ -69,7 +69,7 @@ pub fn rebase(path:&Path,folder:&Path)->Result<()> {
     configure(&tx,&folder)?;tx.commit().map_err(err)
 }
 pub fn preferences(path:&Path)->Result<Option<serde_json::Value>>{let db=db::connect(path)?;if db::setting(&db,"managed_root").is_none(){return Ok(None);}Ok(Some(serde_json::from_str(&db::setting(&db,"appearance_preferences").unwrap_or_else(||"{}".into())).map_err(err)?))}
-pub fn save_preferences(path:&Path,value:&serde_json::Value)->Result<()>{if root(path)?.is_none(){return Ok(());}db::set_setting(&db::connect(path)?,"appearance_preferences",&serde_json::to_string(value).map_err(err)?)?;refresh_browser(path)}
+pub fn save_preferences(path:&Path,value:&serde_json::Value)->Result<()>{if root(path)?.is_none(){return Ok(());}db::set_setting(&db::connect(path)?,"appearance_preferences",&serde_json::to_string(value).map_err(err)?)?;after_commit(path,false);Ok(())}
 pub fn refresh_browser(path:&Path)->Result<()>{
     let Some(folder)=root(path)? else{return Ok(())};let mut lib=db::load(path,false)?;
     update_inventory(path,&folder,&lib)?;
@@ -166,4 +166,14 @@ pub fn overview(path:&Path)->Result<Overview>{
         CollectionStorage{name:name.into(),count:items.len(),bytes,path:folder.as_ref().map(|f|f.join(name).to_string_lossy().into_owned())}
     }).collect();
     Ok(Overview{root:folder.map(|f|f.to_string_lossy().into_owned()),collections,last_backup:db::setting(&db::connect(path)?,"last_backup")})
+}
+
+// The database edit is already durable. Failure to maintain derived files must
+// never tell the caller to repeat that edit. Rescan or the next edit retries it.
+pub fn after_commit(path:&Path, organise_files:bool) {
+    let pending=db::connect(path).ok().and_then(|db|db::setting(&db,"maintenance_warning")).is_some_and(|s|!s.is_empty());
+    let result=if organise_files||pending {organise(path)} else {refresh_browser(path)};
+    let warning=if result.is_err(){"Saved your changes, but library files or the browser inventory need attention. Use Rescan library to retry."}else{""};
+    if let Ok(db)=db::connect(path){let _=db::set_setting(&db,"maintenance_warning",warning);}
+    if result.is_err(){crate::diagnostics::event("native.maintenance","warning",0.,serde_json::json!({"error_code":"maintenance_pending"}));}
 }

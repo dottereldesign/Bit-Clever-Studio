@@ -415,6 +415,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
     }
     historyReady.current=true;
     libRef.current=next;setLib(next);
+    setError(previous=>next.maintenance_warning??(previous.startsWith("Saved your changes, but library files")?"":previous));
     setReady(true);
     return next;
   }, []);

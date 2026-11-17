@@ -55,6 +55,7 @@ pub struct HistoryEntry {
 }
 #[derive(Serialize, Deserialize)]
 pub struct Library {
+    #[serde(default)] pub maintenance_warning: Option<String>,
     #[serde(default)]
     pub studio: Vec<crate::studio::Entry>,
     #[serde(default)]
@@ -337,6 +338,7 @@ pub fn load(path: &Path, scanning: bool) -> Result<Library> {
         Ok(rows)
     };
     Ok(Library {
+        maintenance_warning:setting(&db,"maintenance_warning").filter(|s|!s.is_empty()),
         studio: crate::studio::load(&db)?,
         project_folders: crate::project_folders::folders(&db)?,
         project_overviews: crate::project_overview::load(&db)?,

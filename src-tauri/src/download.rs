@@ -204,24 +204,29 @@ fn error_message(raw: &str) -> String {
         "The website did not provide a downloadable video. It may be removed, restricted, or temporarily blocked. Try again or use another link.".into()
     }
 }
-pub fn run(
+#[cfg(test)]
+pub fn run(db_path:&Path,downloader:&Path,ffmpeg:&Path,request:Request,cancelled:&AtomicBool,notify:&mut impl FnMut(Progress))->Result<Saved>{
+    run_locked(db_path,downloader,ffmpeg,request,cancelled,notify,&std::sync::Mutex::new(()))
+}
+pub fn run_locked(
     db_path: &Path,
     downloader: &Path,
     ffmpeg: &Path,
     mut request: Request,
     cancelled: &AtomicBool,
     notify: &mut impl FnMut(Progress),
+    lock: &std::sync::Mutex<()>,
 ) -> Result<Saved> {
     request.url = normalize(&request.url)?;
-    if let Some(saved) = existing(db_path, &request)? {
-        return Ok(saved);
+    {
+        let _guard=lock.lock().map_err(err)?;
+        if cancelled.load(Ordering::SeqCst){return Err("Download cancelled.".into());}
+        if let Some(saved)=existing(db_path,&request)?{return Ok(saved);}
     }
     if !downloader.is_file() {
         return Err("yt-dlp is missing. Reinstall the updated Design app.".into());
     }
-    let root = sources::root(&db::connect(db_path)?, "Videos")?
-        .canonicalize()
-        .map_err(err)?;
+
     let staging = db_path
         .parent()
         .ok_or("Missing data folder")?
@@ -236,6 +241,7 @@ pub fn run(
     }
     let job = Temporary(job);
     notify(Progress::phase("connecting"));
+    if cancelled.load(Ordering::SeqCst){return Err("Download cancelled.".into());}
     let mut command = Command::new(downloader);
     hidden(&mut command);
     command
@@ -357,6 +363,10 @@ pub fn run(
         })
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "Downloaded video".into());
+    let _guard=lock.lock().map_err(err)?;
+    if cancelled.load(Ordering::SeqCst){return Err("Download cancelled.".into());}
+    if let Some(saved)=existing(db_path,&request)?{return Ok(saved);}
+    let root=sources::root(&db::connect(db_path)?,"Videos")?.canonicalize().map_err(err)?;
     import(db_path, &root, &file, &title, &request)
 }
 fn consume(
