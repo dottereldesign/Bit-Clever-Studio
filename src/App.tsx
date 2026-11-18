@@ -1,3 +1,4 @@
+import BackupCoverage from "./BackupCoverage";
 import {createRefreshCoordinator} from "./refreshCoordinator";
 import {useAppTheme} from './AppTheme';
 import MyBusiness, {BusinessNavigation} from './MyBusiness';
@@ -2692,6 +2693,7 @@ function Dialog({
               <span className="setting-label">Backup</span>
               <button className="primary" onClick={exportLibrary}><Download size={14}/> Export full library</button>
               <small>Original media, saved links and organisation in one portable folder.</small>
+              <BackupCoverage/>
               <div className="button-row">
                 <button
                   className="subtle-button"
@@ -2707,7 +2709,7 @@ function Dialog({
                 </button>
               </div>
               <small>
-                Projects, tags and links. Imports merge with your library.
+                Metadata exports contain records and file references, not original media or appearance images. Imports merge with your library.
               </small>
             </div>
 </>}

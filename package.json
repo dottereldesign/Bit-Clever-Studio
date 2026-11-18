@@ -30,6 +30,7 @@
     "test:browser:smoke": "node scripts/check-browser-smoke.mjs",
     "test:workflow": "node scripts/check-grid-return.mjs workflow-tools",
     "test:actions": "node scripts/check-grid-return.mjs copy-resources",
+    "verify:restore": "node scripts/verify-restore.mjs",
     "test:contracts": "node scripts/check-native-contract.mjs",
     "test:native": "node scripts/desktop.mjs test",
     "check:version": "node scripts/check-version.mjs",

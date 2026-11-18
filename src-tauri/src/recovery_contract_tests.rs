@@ -135,6 +135,10 @@ fn recovery_contract_round_trip() {
     library_export::verify(&backup).unwrap();
     let relocated_backup = base.join("relocated-backup");
     fs::rename(&backup, &relocated_backup).unwrap();
+    let rehearsal = library_export::backup_verification_tests::verify_disposable_restore(&relocated_backup).unwrap();
+    assert_eq!(rehearsal["items"], 3);
+    assert_eq!(rehearsal["project_folders"], 2);
+
     // Reject incomplete activation before replacing the active-library pointer.
     let config = base.join("config");
     fs::create_dir(&config).unwrap();

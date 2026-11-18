@@ -309,7 +309,7 @@ fn run(conn: &rusqlite::Connection, output: &Path, data: &Path, preferences: &mu
     fs::write(output.join("Library Data/links.csv"),table).map_err(err)?;
 
     write_browser(output,&library,preferences)?;
-    fs::write(output.join("Read Me.txt"),"BIT CLEVER LIBRARY BACKUP\n\nDesign Inspo/ and App Components/ contain originals, stored once per item. General/ holds other collections. Appearance/ holds custom images. Library Data/ preserves every folder membership, project, tag, saved link and setting.\n\nOpen Browse Library.html to browse offline. In Bit Clever, choose Storage > Open Existing Library to use this folder separately, or Merge Backup to add it to your current library.\n\nCopy this ENTIRE folder to an external drive and Verify Backup on that copy. INCOMPLETE.txt means the backup did not finish. Review unavailable files before relying on a backup. Removed items, undo history, browser sessions and caches are excluded. Keep another copy on a separate drive or location.\n").map_err(err)?;
+    fs::write(output.join("Read Me.txt"),"BIT CLEVER LIBRARY BACKUP\n\nDesign Inspo/ and App Components/ contain originals, stored once per item. General/ holds other collections. Appearance/ holds custom images. Library Data/ preserves folder memberships, projects and notes, tags, ratings, saved links, library clients/leads and activity, and saved appearance preferences including Home tiles.\n\nOpen Browse Library.html to browse offline. In Bit Clever, choose Storage > Open Existing Library to use this folder separately, or Merge Backup to add it to your current library.\n\nCopy this ENTIRE folder to an external drive and Verify Backup on that copy. INCOMPLETE.txt means the backup did not finish. Review unavailable files before relying on a backup. My Business data (the separate device-private database), account/calendar credentials, unfinished drafts, download queues, removed items, duplicate-recovery files, browser sessions and caches are excluded. Undo/Redo history is not restored. Keep a separate backup of My Business data. Missing originals cannot be recovered from this export. Verify Backup checks file integrity; it does not perform a full restore. Keep another copy on a separate drive or location.\n").map_err(err)?;
     fs::write(output.join("Library Data/library.json.part"),serde_json::to_vec_pretty(&Backup{version:1,portable:true,client_events,library}).map_err(err)?).map_err(err)?;
     fs::rename(output.join("Library Data/library.json.part"),output.join("Library Data/library.json")).map_err(err)?;
     fs::write(output.join("Library Data/preferences.json"),serde_json::to_vec_pretty(preferences).map_err(err)?).map_err(err)?;
@@ -466,3 +466,7 @@ mod tests {
     }
 
 }
+
+#[cfg(test)]
+#[path = "backup_verification_tests.rs"]
+pub(crate) mod backup_verification_tests;
