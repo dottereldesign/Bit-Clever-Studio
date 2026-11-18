@@ -4,7 +4,7 @@ import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
 const fixture = process.argv[2] ?? 'grid-return';
-if (!['preference-recovery','refresh-consistency','library-isolation','app-themes','my-business', 'sidebar-tools', 'customise-tab-order', 'analytics-reports', 'default-appearance', 'startup', 'analytics', 'home-overview', 'close-lead', 'customise-layouts', 'tab-styles', 'cta-buttons', 'add-contact', 'home-logo', 'client-sidebar', 'calendar-setup', 'clients-performance', 'branding', 'clients', 'sidebar-reorder', 'customise-motion', 'research', 'leads-tour', 'calendar-sync', 'studio', 'sidebar-styles', 'moodboard', 'project-workspace', 'project-folder-drag', 'thumbnail-readiness', 'storage-cache', 'collection-performance', 'settings-page', 'diagnostics', 'project-navigation', 'project-folders', 'link-categories', 'thumbnail-click', 'colour-picker', 'website-scroll', 'hover-preview', 'image-drop', 'clipboard-scroll', 'view-session', 'thumbnail-enlargement', 'component-links', 'customization', 'app-history', 'home-styles', 'thumbnail-loading', 'performance', 'grid-return', 'copy-resources', 'link-boards', 'video-download', 'categories', 'workflow-tools', 'pointer-moves', 'wide-preview', 'library-export'].includes(fixture)) throw Error('Unknown browser test fixture');
+if (!['accessibility','preference-recovery','refresh-consistency','library-isolation','app-themes','my-business', 'sidebar-tools', 'customise-tab-order', 'analytics-reports', 'default-appearance', 'startup', 'analytics', 'home-overview', 'close-lead', 'customise-layouts', 'tab-styles', 'cta-buttons', 'add-contact', 'home-logo', 'client-sidebar', 'calendar-setup', 'clients-performance', 'branding', 'clients', 'sidebar-reorder', 'customise-motion', 'research', 'leads-tour', 'calendar-sync', 'studio', 'sidebar-styles', 'moodboard', 'project-workspace', 'project-folder-drag', 'thumbnail-readiness', 'storage-cache', 'collection-performance', 'settings-page', 'diagnostics', 'project-navigation', 'project-folders', 'link-categories', 'thumbnail-click', 'colour-picker', 'website-scroll', 'hover-preview', 'image-drop', 'clipboard-scroll', 'view-session', 'thumbnail-enlargement', 'component-links', 'customization', 'app-history', 'home-styles', 'thumbnail-loading', 'performance', 'grid-return', 'copy-resources', 'link-boards', 'video-download', 'categories', 'workflow-tools', 'pointer-moves', 'wide-preview', 'library-export'].includes(fixture)) throw Error('Unknown browser test fixture');
 const port = ["wide-preview", "performance"].includes(fixture) ? "1422" : "1421";
 const testUrl = `http://127.0.0.1:${port}/tests/${fixture}.html`;
 
@@ -22,7 +22,7 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   if (!started) throw Error('Test server did not start');
-  for (const dimensions of (fixture === 'link-boards' ? ['1920,1080', '1440,940', '960,700'] : fixture === 'home-styles' ? ['1440,2000', '960,700'] : fixture === 'performance' ? ['1920,1080'] : fixture === 'wide-preview' ? ['3440,1440', '1920,1080', '1600,940', '1599,940'] : ['1440,940', '960,700'])) {
+  for (const dimensions of (fixture === 'accessibility' ? ['1440,940','850,580'] : fixture === 'link-boards' ? ['1920,1080', '1440,940', '960,700'] : fixture === 'home-styles' ? ['1440,2000', '960,700'] : fixture === 'performance' ? ['1920,1080'] : fixture === 'wide-preview' ? ['3440,1440', '1920,1080', '1600,940', '1599,940'] : ['1440,940', '960,700'])) {
     const profile = await mkdtemp(join(tmpdir(), 'design-grid-check-'));
     try {
       // An isolated headless process uses real browser frames and keyboard events.
@@ -63,11 +63,12 @@ try {
         let lastPointerAction=0;
         let lastWheelAction=0;
         let lastResizeAction=0;
+        let lastKeyAction=0,lastAxRequest=0;
         let captured = false;
         let lastCaptureName="";
         const deadline = Date.now() + (['home-styles','customization','grid-return'].includes(fixture)?120000:60000);
         while (Date.now() < deadline) {
-          const { result: state } = await call('Runtime.evaluate', { expression: '({ report: document.getElementById("check-result")?.textContent, enter: !!window.__awaitNativeEnter, pointer: window.__pointerAction, wheel: window.__wheelAction, resize: window.__resizeAction, capture: !!window.__screenshotReady, captureName: window.__captureName })', returnByValue: true }, sessionId);
+          const { result: state } = await call('Runtime.evaluate', { expression: '({ report: document.getElementById("check-result")?.textContent, enter: !!window.__awaitNativeEnter, pointer: window.__pointerAction, wheel: window.__wheelAction, resize: window.__resizeAction, capture: !!window.__screenshotReady, captureName: window.__captureName, keyAction: window.__keyAction, axRequest: window.__axRequest })', returnByValue: true }, sessionId);
           if (['app-themes','my-business','sidebar-tools', 'customise-tab-order', 'analytics-reports', 'default-appearance', 'startup', 'analytics', 'home-overview', 'close-lead', 'customise-layouts', 'tab-styles', 'cta-buttons', 'add-contact', 'calendar-setup', 'clients-performance', 'branding', 'clients', 'sidebar-reorder', 'customise-motion', 'research', 'leads-tour', 'calendar-sync', 'studio', 'sidebar-styles', 'moodboard', 'project-workspace', 'settings-page', 'diagnostics', 'project-folder-drag', 'project-folders', 'link-categories', 'thumbnail-click', 'colour-picker', 'website-scroll', 'link-boards', 'hover-preview', 'library-export', 'image-drop', 'view-session', 'thumbnail-enlargement', 'copy-resources', 'component-links', 'customization', 'home-styles', 'thumbnail-loading', 'wide-preview', 'workflow-tools', 'categories'].includes(fixture) && state.value?.capture && (!captured || (['app-themes','my-business','sidebar-tools','settings-page','analytics-reports','analytics','studio','home-styles','customization','project-workspace','cta-buttons','home-overview','close-lead'].includes(fixture)&&state.value.captureName!==lastCaptureName))) {
             await mkdir('.tools/checks', { recursive: true });
             const shot = await call('Page.captureScreenshot', { format: 'png' }, sessionId);
@@ -75,6 +76,21 @@ try {
             await writeFile(`.tools/checks/${fixture}${captureName}-${dimensions}.png`, Buffer.from(shot.data, 'base64'));
             lastCaptureName=state.value.captureName;
             captured = true;
+          }
+          if(state.value?.keyAction?.id>lastKeyAction){
+            const action=state.value.keyAction;lastKeyAction=action.id;
+            const codes={Tab:9,Escape:27,ArrowDown:40,ArrowRight:39,Enter:13};
+            if(!(action.key in codes))throw Error('Unsupported fixture key');
+            const key={key:action.key,code:action.key,windowsVirtualKeyCode:codes[action.key],modifiers:action.shift?8:0};
+            await call('Input.dispatchKeyEvent',{type:'keyDown',...key,...(action.key==='Enter'?{text:'\r'}:{})},sessionId);
+            await call('Input.dispatchKeyEvent',{type:'keyUp',...key},sessionId);
+            await call('Runtime.evaluate',{expression:`window.__keyActionDone=${action.id}`},sessionId);
+          }
+          if(state.value?.axRequest>lastAxRequest){
+            lastAxRequest=state.value.axRequest;
+            const {nodes}=await call('Accessibility.getFullAXTree',{},sessionId);
+            const snapshot=nodes.filter(node=>!node.ignored).map(node=>({role:node.role?.value,name:node.name?.value,properties:node.properties}));
+            await call('Runtime.evaluate',{expression:`window.__axSnapshot=${JSON.stringify(snapshot)};window.__axDone=${lastAxRequest}`},sessionId);
           }
           if (state.value?.resize?.id > lastResizeAction) {
             const action = state.value.resize; lastResizeAction = action.id;

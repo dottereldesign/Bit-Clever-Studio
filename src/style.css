@@ -1922,3 +1922,27 @@ body.reordering-sidebar, body.reordering-sidebar * { cursor:grabbing !important;
 .sidebar-reorder-actions { display:flex;gap:8px;margin-bottom:12px; }
 
 .brand[data-home-drop-active="true"] { outline:2px solid var(--accent,#557160);outline-offset:-2px;background:#dfe8dc; }
+
+/* Native modal containment includes controls portalled outside the App root. */
+dialog.duplicates-dialog {
+  margin:0;border:0;width:100vw;height:100dvh;max-width:none;max-height:none;
+  color:var(--app-ink,#30322f);background:transparent;
+}
+dialog.duplicates-dialog:not([open]) { display:none; }
+dialog.duplicates-dialog::backdrop { background:#23271f70;backdrop-filter:blur(3px); }
+.duplicates-dialog .duplicates-modal {
+  width:min(650px,100%);max-height:calc(100dvh - 48px);
+  background:var(--app-panel,#fafaf7);color:var(--app-ink,#30322f);
+}
+.duplicates-modal .duplicate-group { min-width:0;margin-inline:0; }
+.duplicates-modal .duplicate-group legend { padding:0 4px;font-size:12px; }
+.duplicates-modal .duplicate-note,.duplicates-modal .duplicate-progress-file,
+.duplicates-modal .duplicate-loading { color:var(--app-muted,#59634f); }
+.colour-tool { display:inline-flex; }
+.colour-panel { max-height:calc(100dvh - 160px);overflow:auto;background:var(--app-panel,#fff);color:var(--app-ink,#26322d); }
+.colour-panel p { color:var(--app-muted,#59634f); }
+textarea:focus-visible,[tabindex]:focus-visible { outline:2px solid var(--app-accent,#456349);outline-offset:3px; }
+.duplicates-modal :focus-visible,.colour-panel :focus-visible,.sidebar-green-panel :focus-visible { outline:2px solid var(--app-ink,#26322d);outline-offset:3px; }
+.sidebar-green-picker[hidden] { display:none; }
+
+.duplicates-modal button,.colour-panel button { color:inherit; }

@@ -1,5 +1,5 @@
-import {useEffect,useRef,useState} from 'react';
-import {Pipette,X,Copy} from 'lucide-react';
+import {useEffect,useId,useRef,useState} from 'react';
+import {Pipette,X,Copy,ChevronDown} from 'lucide-react';
 import {invoke} from "./diagnostics";
 import {useHistoryState} from './useAppHistory';
 import type {Label} from './model';
@@ -27,6 +27,9 @@ export default function ColourPicker({projects}:{projects:Label[]}){
  const [colours,setColours]=useColours();
  const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[selected,setSelected]=useState(''),[filter,setFilter]=useState(''),[message,setMessage]=useState('');
  const root=useRef<HTMLDivElement>(null),button=useRef<HTMLButtonElement>(null),running=useRef(false);
+ const historyId=useId(),returnFocus=useRef<HTMLButtonElement|null>(null);
+ const openHistory=(target:HTMLButtonElement)=>{returnFocus.current=target;setOpen(true);};
+ const closeHistory=()=>{setOpen(false);returnFocus.current?.focus({preventScroll:true});};
  useEffect(()=>{if(!open)return;root.current?.querySelector('select')?.focus();const outside=(e:PointerEvent)=>{if(!root.current?.contains(e.target as Node))setOpen(false);};document.addEventListener('pointerdown',outside,true);return()=>document.removeEventListener('pointerdown',outside,true);},[open]);
  useEffect(()=>{if(!message)return;const t=setTimeout(()=>setMessage(''),3500);return()=>clearTimeout(t);},[message]);
  const copy=async(hex:string)=>{try{await invoke('copy_colour',{hex});setMessage(`${hex} copied`);}catch{setMessage(`${hex} saved. Clipboard unavailable; try Copy again.`);}};
@@ -43,11 +46,12 @@ export default function ColourPicker({projects}:{projects:Label[]}){
  };
  const visible=colours.filter(c=>!filter||c.projects.includes(filter));
  const chosen=visible.find(c=>c.hex===selected)??visible[0];
- return <div ref={root} className="colour-tool">
-  <button ref={button} className="icon-button" aria-label="Pick a colour" title="Pick a colour · Right-click for history and projects" disabled={busy} onClick={()=>void pick()} onContextMenu={e=>{e.preventDefault();e.stopPropagation();setOpen(v=>!v);}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.stopPropagation();setOpen(true);}}}><Pipette size={18}/></button>
+ return <div ref={root} className="colour-tool" onBlurCapture={()=>{requestAnimationFrame(()=>{if(!root.current?.contains(document.activeElement))setOpen(false);});}}>
+  <button ref={button} className="icon-button" aria-label="Pick a colour" title="Pick a colour · Right-click for history and projects" disabled={busy} onClick={()=>void pick()} onContextMenu={e=>{e.preventDefault();e.stopPropagation();openHistory(e.currentTarget);}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.stopPropagation();openHistory(e.currentTarget);}}}><Pipette size={18}/></button>
+  <button className="icon-button" aria-label="Colour history" title="Colour history and projects" aria-haspopup="dialog" aria-expanded={open} aria-controls={open?historyId:undefined} disabled={busy} onClick={e=>open?closeHistory():openHistory(e.currentTarget)}><ChevronDown size={14}/></button>
   {message&&!open&&<span className="colour-message" role="status">{message}</span>}
-  {open&&<div className="colour-panel" role="dialog" aria-label="Colour history" onContextMenu={e=>e.stopPropagation()} onKeyDown={e=>{e.stopPropagation();if(e.key==='Escape'){setOpen(false);button.current?.focus();}}}>
-   <header><strong>Colours</strong><button className="icon-button" aria-label="Close colour history" onClick={()=>setOpen(false)}><X size={15}/></button></header>
+  {open&&<div id={historyId} className="colour-panel" role="dialog" aria-label="Colour history" onContextMenu={e=>e.stopPropagation()} onKeyDown={e=>{e.stopPropagation();if(e.key==='Escape'){closeHistory();}}}>
+   <header><strong>Colours</strong><button className="icon-button" aria-label="Close colour history" onClick={closeHistory}><X size={15}/></button></header>
    <select aria-label="Filter colours by project" value={filter} onChange={e=>setFilter(e.target.value)}><option value="">All colours</option>{projects.map(p=><option key={p.id} value={`project:${p.id}`}>{p.name}</option>)}</select>
    {!colours.length?<p>Pick a colour anywhere on screen. Its hex code is copied automatically.</p>:<>
     <div className="colour-swatches">{visible.map(c=><button key={c.hex} aria-label={`Select ${c.hex}`} aria-pressed={chosen?.hex===c.hex} title={c.hex} style={{background:c.hex}} onClick={()=>setSelected(c.hex)}/>)}</div>

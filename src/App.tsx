@@ -811,7 +811,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
             paths: capture.files.map((f) => f.path),
           }).catch(report);
           setCapture(null);
-        } else if (duplicatesOpen) setDuplicatesOpen(false);
+        } else if (duplicatesOpen) return; // The native dialog owns Escape, including its busy guard.
         else if (modal) setModal(null);
         else if (viewer !== null) closeViewer();
         else setSelected(new Set());
@@ -1371,7 +1371,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
       }}
       style={{ "--sidebar-width": `${sidebarWidth}px`,"--nav-row":`${navLayout.row}px`,"--nav-inset":`${navLayout.inset}px`,"--nav-radius":`${navLayout.radius}px`,"--nav-indent":navLayout.indent===undefined?undefined:`${navLayout.indent}px` } as React.CSSProperties}
     >
-      <SidebarGreenPicker/>
+      <SidebarGreenPicker blocked={thumbnailEnlarged || !!customTab || quickPreview !== null || (viewer !== null && !widePreview) || (!!modal&&modal.kind!=='settings') || !!capture || !!videoDialog || duplicatesOpen || removedOpen || libraryExportOpen || storageOpen || !!extraDialog}/>
       <aside
         className="sidebar"
         onClickCapture={e=>{if((e.target as HTMLElement).closest('.nav-item,.brand,[aria-label=Settings]')){const stamp=performance.now();navigationStart.current=stamp;setTimeout(()=>{if(navigationStart.current===stamp)navigationStart.current=null;},0);}if(modal?.kind==='settings'&&(e.target as HTMLElement).closest('.nav-item,.brand'))setModal(null);}}

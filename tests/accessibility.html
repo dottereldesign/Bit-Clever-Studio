@@ -1,0 +1,74 @@
+<!doctype html><html><head><meta charset="UTF-8"><title>Accessibility checks</title></head><body>
+<div id="root"></div><pre id="check-result" hidden>pending</pre><script type="module">
+import React from 'react';import {createRoot} from 'react-dom/client';
+import App from '/src/App.tsx';import '/src/style.css';
+import {appHistory} from '/src/appHistory.ts';
+import {appThemes} from '/src/appThemeData.ts';
+import {contrast} from '/src/tabTheme.ts';
+let callback=0,finishScan,finishRemoval;
+const groups=Array.from({length:12},(_,i)=>[i*2+1,i*2+2]);
+const items=groups.flat().map(id=>({id,name:`Reference ${id}`,path:`C:/Synthetic/Long folder name/Reference ${id}.png`,kind:'image',source:'Design/3d',added:id,modified:1,missing:false,tags:[],projects:[]}));
+const lib={items,projects:[],tags:[],sources:['Design/3d'],root:'C:/Synthetic',scanning:false,undo_entries:[]};
+let scanned=false;
+window.isTauri=true;window.__TAURI_INTERNALS__={transformCallback:()=>++callback,convertFileSrc:p=>p,invoke:async(command,args)=>{
+ if(command==='get_library')return structuredClone(lib);
+ if(command.startsWith('plugin:event|'))return ++callback;
+ if(command==='find_duplicates'){if(scanned)return {groups,skipped:0};return new Promise(resolve=>{finishScan=()=>{scanned=true;resolve({groups,skipped:0});};});}
+ if(command==='duplicate_recovery')return [{id:50,name:'Recoverable file',path:'C:/Synthetic/recovery.png'}];
+ if(command==='remove_duplicates')return new Promise(resolve=>{finishRemoval=resolve;});
+ if(['diagnostics_record','save_library_preferences','clients_initialise'].includes(command))return false;
+ if(command==='get_media')return 'C:/Synthetic/thumbnail.png';
+ throw Error(command);
+}};window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener(){}};
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const assert=(ok,message)=>{if(!ok)throw Error(message);};
+async function until(test,message){const start=performance.now();while(!test()){if(performance.now()-start>8000)throw Error(message);await pause(20);}}
+let keyId=0,axId=0;
+async function key(name,shift=false){window.__keyAction={id:++keyId,key:name,shift};await until(()=>window.__keyActionDone===keyId,'Native key '+name);await pause(20);}
+async function ax(){window.__axRequest=++axId;await until(()=>window.__axDone===axId,'Accessibility tree');return window.__axSnapshot;}
+const button=text=>[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===text);
+const inViewport=element=>{const r=element.getBoundingClientRect();return r.left>=-1&&r.top>=-1&&r.right<=innerWidth+1&&r.bottom<=innerHeight+1;};
+const hex=colour=>'#'+colour.match(/\d+(?:\.\d+)?/g).slice(0,3).map(v=>Math.round(Number(v)).toString(16).padStart(2,'0')).join('');
+const checks=[];
+createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode,null,React.createElement(App)));
+try{
+ await until(()=>document.querySelector('.home-dashboard'),'Startup');
+ const green=document.querySelector('[aria-label="Green variations"]');green.focus();await key('Enter');
+ await until(()=>document.querySelector('.sidebar-green-panel input:checked')===document.activeElement,'Picker initial focus');
+ for(const sample of document.querySelectorAll('.sidebar-green-sample'))assert(contrast(hex(getComputedStyle(sample).color),hex(getComputedStyle(sample).backgroundColor))>=4.5,'Green sample contrast');
+ await key('ArrowRight');assert(document.activeElement.matches('input[type=radio]'),'Native radio navigation');
+ await key('Escape');assert(document.activeElement===green&&!document.querySelector('.sidebar-green-panel'),'Picker Escape restores trigger');
+ green.click();await until(()=>document.querySelector('.sidebar-green-panel'),'Picker reopened');await pause(30);
+ await key('Tab',true);await key('Tab',true);await key('Tab',true);
+ await until(()=>!document.querySelector('.sidebar-green-panel'),'Tab can leave nonmodal picker');
+ checks.push('Portalled picker supports native radio keys, Escape return and Tab dismissal');
+ document.querySelector('[aria-label="Settings"]').click();await until(()=>document.getElementById('settings-tab-library'),'Settings');document.getElementById('settings-tab-library').click();
+ await until(()=>button('Find duplicates'),'Library settings ready');button('Find duplicates').focus();await key('Enter');
+ await until(()=>document.querySelector('dialog.duplicates-dialog[open]')&&finishScan,'Native modal opened');
+ const dialog=document.querySelector('dialog.duplicates-dialog'),close=document.querySelector('[aria-label="Close duplicates"]');
+ assert(document.activeElement===close,'Duplicates initial focus');
+ const tree=await ax();assert(tree.some(n=>n.role==='dialog'&&n.name==='Duplicates'),'Named dialog in accessibility tree');assert(tree.some(n=>n.role==='progressbar'&&n.name==='Duplicate check progress'),'Named progress in accessibility tree');assert(!tree.some(n=>n.role==='button'&&n.name==='Green variations'),'Portal is excluded from modal accessibility tree');
+ green.focus();assert(dialog.contains(document.activeElement),'Portal cannot steal modal focus');
+ finishScan();await until(()=>document.querySelectorAll('.duplicate-group').length===12,'Duplicate groups');
+ assert(inViewport(document.querySelector('.duplicates-modal')),'Modal fits the viewport');
+ await key('Tab',true);assert(dialog.contains(document.activeElement),'Reverse Tab stays in modal');
+ await key('Tab');assert(dialog.contains(document.activeElement),'Forward Tab wraps within modal');
+ const radio=document.querySelector('.duplicate-file input');radio.focus();await key('ArrowRight');assert(document.querySelectorAll('.duplicate-file input')[1].checked,'Duplicate choice uses native radio keys');
+ const resultsTree=await ax();assert(resultsTree.some(n=>n.role==='group'&&n.name==='Group 1: choose the file to keep'),'Duplicate group has a spoken name');
+ for(const theme of ['studio',...appThemes.map(t=>t.id)]){
+  appHistory.write({'app-theme':{theme,fontMode:'default',body:'original',heading:'original'}});await pause(15);
+  const surface=getComputedStyle(document.querySelector('.duplicates-modal'));
+  for(const selector of ['.duplicate-note','.duplicate-file strong','.duplicate-progress-file']){
+   const element=document.querySelector(selector);if(element)assert(contrast(hex(getComputedStyle(element).color),hex(surface.backgroundColor))>=4.5,`${theme}: ${selector} contrast`);
+  }
+ }
+ appHistory.write({'app-theme':{theme:'studio',fontMode:'default',body:'original',heading:'original'}});
+ document.querySelector('.duplicate-group .subtle-button').click();await until(()=>close.disabled&&finishRemoval,'Busy operation');await key('Escape');assert(dialog.open,'Escape cannot dismiss an active file mutation');finishRemoval();await until(()=>!close.disabled,'Mutation finishes');
+ await key('Escape');await until(()=>!document.querySelector('dialog.duplicates-dialog'),'Close modal');await until(()=>document.activeElement?.getAttribute('aria-label')==='Settings','Focus returns after original trigger unmounts');
+ checks.push('Duplicates contains focus, exposes names/progress/groups and preserves focus after closing');
+ checks.push('Duplicate text meets 4.5:1 across theme presets; modal fits minimum window');
+ const history=document.querySelector('[aria-label="Colour history"]');history.focus();await key('Enter');await until(()=>document.querySelector('.colour-panel select')===document.activeElement,'Colour history focus');assert(inViewport(document.querySelector('.colour-panel')),'Colour history fits viewport');await key('Escape');assert(document.activeElement===history,'Colour history Escape returns focus');history.click();await until(()=>document.querySelector('.colour-panel'),'Reopen colour history');document.querySelector('[aria-label="Close colour history"]').click();assert(document.activeElement===history,'Close button returns focus');
+ checks.push('Colour history has a visible keyboard opener and returns focus on both close paths');
+ document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks,width:innerWidth,themes:appThemes.length+1});
+}catch(error){document.getElementById('check-result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack,checks,focus:document.activeElement?.outerHTML?.slice(0,500)});}
+</script></body></html>

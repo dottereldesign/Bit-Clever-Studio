@@ -17,12 +17,13 @@ const greens=[
   {id:'pine',name:'Deep pine',background:'#254c3b',ink:'#ffffff'},
 ] as const;
 
-export default function SidebarGreenPicker(){
+export default function SidebarGreenPicker({blocked=false}:{blocked?:boolean}){
   const [saved,setSaved]=useHistoryState<string>('sidebar-active-green',()=>{try{return JSON.parse(localStorage.getItem('sidebar-active-green')??'"emerald"');}catch{return 'emerald';}},'Sidebar active green');
   const [emeraldApplied,,markEmeraldApplied]=useHistoryState<boolean>('sidebar-emerald-default-applied',()=>localStorage.getItem('sidebar-emerald-default-applied')==='true','Emerald default applied');
   useEffect(()=>{if(!emeraldApplied){setSaved('emerald');markEmeraldApplied(true);}},[emeraldApplied,setSaved,markEmeraldApplied]);
   const selected=greens.find(g=>g.id===saved)??greens[8];
   const [open,setOpen]=useState(false);
+  useEffect(()=>{if(blocked)setOpen(false);},[blocked]);
   const trigger=useRef<HTMLButtonElement>(null),panel=useRef<HTMLDivElement>(null);
   useLayoutEffect(()=>{
     const style=document.documentElement.style;
@@ -37,12 +38,14 @@ export default function SidebarGreenPicker(){
     document.addEventListener('pointerdown',outside);document.addEventListener('keydown',escape,true);
     return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape,true);};
   },[open]);
-  return createPortal(<div className="sidebar-green-picker">
-    <button ref={trigger} className="sidebar-green-trigger" aria-label="Green variations" aria-expanded={open} aria-haspopup="dialog" onClick={()=>setOpen(!open)}><Palette size={15}/><span>Green variations</span><i style={{background:selected.background}}/></button>
-    {open&&<div ref={panel} className="sidebar-green-panel" role="dialog" aria-labelledby="sidebar-green-title" onKeyDown={event=>event.stopPropagation()}>
+  return createPortal(<div className="sidebar-green-picker" inert={blocked} hidden={blocked} onBlurCapture={()=>{
+    requestAnimationFrame(()=>{if(!panel.current?.contains(document.activeElement)&&!trigger.current?.contains(document.activeElement))setOpen(false);});
+  }}>
+    <button ref={trigger} className="sidebar-green-trigger" aria-label="Green variations" aria-expanded={open} aria-haspopup="dialog" aria-controls={open?"sidebar-green-dialog":undefined} onClick={()=>setOpen(!open)}><Palette size={15}/><span>Green variations</span><i style={{background:selected.background}}/></button>
+    {open&&<div ref={panel} id="sidebar-green-dialog" className="sidebar-green-panel" role="dialog" aria-labelledby="sidebar-green-title" onKeyDown={event=>event.stopPropagation()}>
       <header><h2 id="sidebar-green-title">Active folder colour</h2><button aria-label="Close green variations" onClick={()=>{setOpen(false);trigger.current?.focus();}}><X size={16}/></button></header>
       <p>Select a folder, then try a green. Changes apply live.</p>
-      <fieldset><legend>10 green variations</legend><div className="sidebar-green-options">{greens.map((green,index)=><label key={green.id} style={{'--green-background':green.background,'--green-ink':green.ink} as CSSProperties}><input type="radio" name="sidebar-active-green" value={green.id} checked={selected.id===green.id} onChange={()=>setSaved(green.id)}/><span className="sidebar-green-sample"><span>{String(index+1).padStart(2,'0')}</span>Selected folder</span><span className="sidebar-green-name">{green.name}</span></label>)}</div></fieldset>
+      <fieldset><legend>10 green variations</legend><div className="sidebar-green-options">{greens.map((green,index)=><label key={green.id} style={{'--green-background':green.background,'--green-ink':green.ink} as CSSProperties}><input type="radio" name="sidebar-active-green" value={green.id} checked={selected.id===green.id} onChange={()=>setSaved(green.id)}/><span className="sidebar-green-sample" aria-hidden="true"><span>{String(index+1).padStart(2,'0')}</span>Selected folder</span><span className="sidebar-green-name">{green.name}</span></label>)}</div></fieldset>
       <footer><span>{selected.name}</span><span>Saved automatically</span></footer>
     </div>}
   </div>,document.body);

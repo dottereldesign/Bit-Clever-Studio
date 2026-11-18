@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Channel, invoke } from "./diagnostics";
 import { LoaderCircle, RotateCcw, X } from "lucide-react";
 import type { Library } from "./model";
@@ -37,6 +37,26 @@ export default function DuplicatesDialog({
     [busy, setBusy] = useState(true),
     [error, setError] = useState("");
   const mounted = useRef(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const previousFocus = useRef(document.activeElement as HTMLElement | null);
+  useLayoutEffect(() => {
+    const element = dialog.current!;
+    element.showModal();
+    return () => {
+      element.close();
+      requestAnimationFrame(() => {
+        if (!element.isConnected) {
+          const target = previousFocus.current?.isConnected ? previousFocus.current : document.querySelector<HTMLElement>('[aria-label="Settings"]');
+          target?.focus({preventScroll:true});
+        }
+      });
+    };
+  }, []);
+  useEffect(() => {
+    const element=dialog.current;
+    if(busy&&!checking)element?.focus();
+    else if(document.activeElement===element)element?.querySelector<HTMLButtonElement>('[aria-label="Close duplicates"]')?.focus();
+  },[busy,checking]);
   const reload = async () => {
     setChecking(true);
     setProgress(null);
@@ -98,23 +118,35 @@ export default function DuplicatesDialog({
     }
   };
   return (
-    <div
-      className="modal-backdrop"
+    <dialog
+      ref={dialog}
+      className="modal-backdrop duplicates-dialog"
+      aria-label="Duplicates"
+      tabIndex={-1}
+      onCancel={event=>{event.preventDefault();if(!busy||checking)close();}}
+      onKeyDown={event=>{
+        event.stopPropagation();
+        if(event.key!=='Tab')return;
+        const controls=Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled)')).filter(element=>element.tabIndex>=0&&element.getClientRects().length>0&&(!(element instanceof HTMLInputElement)||element.type!=='radio'||element.checked));
+        const first=controls[0],last=controls.at(-1),active=document.activeElement;
+        if(!first){event.preventDefault();event.currentTarget.focus();}
+        else if(event.shiftKey&&(active===first||active===event.currentTarget)){event.preventDefault();last?.focus();}
+        else if(!event.shiftKey&&(active===last||active===event.currentTarget)){event.preventDefault();first.focus();}
+      }}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !busy) close();
+        if (e.target === e.currentTarget && (!busy || checking)) close();
       }}
     >
       <div
         className="modal duplicates-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Duplicates"
       >
         <div className="modal-heading">
           <h2>Duplicates</h2>
           <button
             className="icon-button"
             aria-label="Close duplicates"
+            autoFocus
+            disabled={busy&&!checking}
             onClick={close}
           >
             <X size={17} />
@@ -142,19 +174,21 @@ export default function DuplicatesDialog({
           </div>
         )}
         {scan && !scan.groups.length && (
-          <div className="modal-empty">No duplicates found</div>
+          <div className="modal-empty" role="status">No duplicates found</div>
         )}
-        {scan?.groups.map((ids) => {
+        {scan && !busy && scan.groups.length>0 && <p role="status">{scan.groups.length} duplicate {scan.groups.length===1?'group':'groups'} found. Choose which file to keep in each group.</p>}
+        {scan?.groups.map((ids, groupIndex) => {
           const key = ids.join("-"),
             keeper = keepers[key] ?? ids[0];
           return (
-            <section className="duplicate-group" key={key}>
+            <fieldset className="duplicate-group" key={key}><legend>Group {groupIndex+1}: choose the file to keep</legend>
               {ids.map((id) => {
                 const item = lib.items.find((i) => i.id === id);
                 return (
                   <label key={id} className="duplicate-file">
                     <input
                       type="radio"
+                      disabled={busy}
                       name={`keep-${key}`}
                       checked={keeper === id}
                       onChange={() => setKeepers({ ...keepers, [key]: id })}
@@ -163,7 +197,7 @@ export default function DuplicatesDialog({
                       <strong>{item?.name || `File ${id}`}</strong>
                       <small title={item?.path}>{item?.path}</small>
                     </span>
-                    <small>{keeper === id ? "Keep" : ""}</small>
+                    <small aria-hidden="true">{keeper === id ? "Keep" : ""}</small>
                   </label>
                 );
               })}
@@ -182,7 +216,7 @@ export default function DuplicatesDialog({
                 Keep selected · remove {ids.length - 1}{" "}
                 {ids.length === 2 ? "copy" : "copies"}
               </button>
-            </section>
+            </fieldset>
           );
         })}
         {!!scan?.skipped && (
@@ -202,6 +236,7 @@ export default function DuplicatesDialog({
                 <span title={file.path}>{file.name}</span>
                 <button
                   disabled={busy}
+                  aria-label={`Restore ${file.name}`}
                   onClick={() =>
                     void act(() => invoke("restore_duplicate", { id: file.id }))
                   }
@@ -218,6 +253,6 @@ export default function DuplicatesDialog({
           </div>
         )}
       </div>
-    </div>
+    </dialog>
   );
 }
