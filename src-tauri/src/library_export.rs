@@ -217,7 +217,7 @@ fn run(conn: &rusqlite::Connection, output: &Path, data: &Path, preferences: &mu
     progress(status.clone());
     // SQLite's backup API takes a consistent snapshot, including live WAL data.
     let snapshot=output.join("metadata.snapshot.sqlite");
-    conn.backup("main",&snapshot,None).map_err(err)?;
+    conn.backup("main",&snapshot,None::<fn(rusqlite::backup::Progress)>).map_err(err)?;
     let mut library=db::load(&snapshot,false)?;
     let client_events=crate::clients::events(&db::connect(&snapshot)?,None,None,-1)?;
     for suffix in ["", "-wal", "-shm"] {let path=output.join(format!("metadata.snapshot.sqlite{suffix}"));if path.exists(){fs::remove_file(path).map_err(err)?;}}

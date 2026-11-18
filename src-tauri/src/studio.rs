@@ -71,7 +71,7 @@ pub fn init(db: &Connection) -> Result<()> {
                 std::fs::create_dir_all(&folder).map_err(err)?;
                 let backup = folder.join("before-studio-contacts.sqlite");
                 if !backup.exists() {
-                    db.backup("main", &backup, None).map_err(err)?;
+                    db.backup("main", &backup, None::<fn(rusqlite::backup::Progress)>).map_err(err)?;
                 }
             }
         }

@@ -6,9 +6,14 @@ A local Windows inspiration library. Tauri 2, React, TypeScript, Rust and SQLite
 
 For daily development, open **Design Dev** from the Windows desktop and leave its terminal and app open. CSS and frontend edits hot reload in that window. The ordinary **Design** shortcut and `app/Design.exe` continue to open the last standalone build; they do not receive hot reload.
 
+Use the Node 22 version pinned in `.node-version` (also used by CI), and Rust 1.89 or newer. On Windows x64, the optional setup script downloads the official Node archive, verifies its SHA-256, and installs it under ignored `.tools/`; it does not change system Node or your permanent PATH. Design Dev automatically selects that runtime.
+
 On a fresh checkout, install dependencies once and start development from a normal Windows terminal:
 
 ```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-node.ps1
+$nodeVersion = (Get-Content .node-version -Raw).Trim()
+$env:Path = "$PWD\.tools\node-v$nodeVersion-win-x64;$env:Path"
 npm ci
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-dev.ps1
 ```
