@@ -1,3 +1,5 @@
+import {folderViewLocation,updateFolderView,type FolderViews} from "./folderViews";
+import {normalizePreference} from "./preferenceSchema";
 import {createNativeHistoryTracker} from './nativeHistory';
 import BackupCoverage from "./BackupCoverage";
 import {createRefreshCoordinator} from "./refreshCoordinator";
@@ -317,9 +319,9 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
     [type, setType] = useState(savedView?.type??"all"),
     [tags, setTags] = useState<number[]>(savedView?.tags??[]),
     [source, setSource] = useState(savedView?.source??""),
-    [sort, setSort] = useState(savedView?.sort??"recent");
+    [defaultSort] = useState(savedView?.sort??"recent");
   const [seed, setSeed] = useState(savedView?.seed??Date.now()),
-    [size, setSize] = useHistoryState("tile-size",() => storedNumber("tile-size", 260),"Thumbnail size"),
+    [defaultSize, setDefaultSize] = useHistoryState("tile-size",() => storedNumber("tile-size", 260),"Thumbnail size"),
     [sidebarWidth, setSidebarWidth] = useHistoryState("sidebar-width",() => storedNumber("sidebar-width",208),"Sidebar width");
   const [sectionStyle,setSectionStyle]=useHistoryState("sidebar-section-style",readSectionStyle,"Sidebar style");
   const [customTab,setCustomTab]=useState<CustomTab|null>(null);
@@ -380,6 +382,14 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
     [duplicatesOpen, setDuplicatesOpen] = useState(false),
     [dropActive, setDropActive] = useState(false),
     [readingCapture, setReadingCapture] = useState(false);
+  const [folderViews,setFolderViews]=useHistoryState<FolderViews>('folder-view-settings',()=>{try{return normalizePreference('folder-view-settings',JSON.parse(localStorage.getItem('folder-view-settings')??'{}')) as FolderViews??{};}catch{return {};}},'Folder view');
+  const [viewGroup,viewScope]=folderViewLocation({project,projectFolder,generalKey,category,boardView,resourcesView,videoView,linksOnly,source,recent});
+  const folderView=folderViews[viewGroup]?.[viewScope];
+  const size=folderView?.size??defaultSize;
+  const savedSort=folderView?.sort??defaultSort;
+  const sort=!(linksOnly||project!==null)&&savedSort.startsWith('rating-')?'recent':savedSort;
+  const setSize=(value:number)=>setFolderViews(previous=>updateFolderView(previous,viewGroup,viewScope,{size:value}));
+  const setSort=(value:string)=>setFolderViews(previous=>updateFolderView(previous,viewGroup,viewScope,{sort:value}));
   const [itemMenu, setItemMenu] = useState<ItemMenuTarget | null>(null),
     [removedOpen, setRemovedOpen] = useState(false),
     [undoIds, setUndoIds] = useState<number[]>([]);
@@ -473,8 +483,8 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
     return () => clearTimeout(timer);
   }, [notice, undoIds, categoryUndo,receipt]);
   useEffect(() => {
-    localStorage.setItem("tile-size", String(size));
-  }, [size]);
+    localStorage.setItem("tile-size", String(defaultSize));
+  }, [defaultSize]);
   useEffect(() => {
     localStorage.setItem("sidebar-width", String(sidebarWidth));
   }, [sidebarWidth]);
@@ -582,7 +592,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
     setVideoView(false);
     setCategory(null);
     setProject(id);setProjectSection("overview");setProjectFolder(null);setRatingFilter('');
-    if(id===null&&!onlyLinks&&sort.startsWith('rating-'))setSort('recent');
+
     setLinksOnly(onlyLinks);
     setSelected(new Set());
     setViewer(null);
@@ -1724,7 +1734,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
       {homeShortcutDrag.ghost&&<div className="home-drag-ghost" style={{left:homeShortcutDrag.ghost.x+14,top:homeShortcutDrag.ghost.y+16}}><Plus size={14}/>{homeShortcutDrag.ghost.label}<small>Reorder folders or drop on Home</small></div>}
       {folderMenu&&<FolderRename key={folderMenu.name} target={folderMenu} canRename={!!folderMenu.name&&folderMenu.name!==allComponents&&folderMenu.name!==componentInbox} paste={()=>void pasteCapture({category:folderMenu.name,project:null,folder:null})} close={()=>setFolderMenu(null)} appearance={isComponent(folderMenu.name)?{...folderAppearance[folderMenu.name],icon:icons.overrides[`category:${folderMenu.name}`],setColor:color=>setFolderAppearance(previous=>({...previous,[folderMenu.name]:{...previous[folderMenu.name],color}})),toggleStar:()=>setFolderAppearance(previous=>({...previous,[folderMenu.name]:{...previous[folderMenu.name],starred:!previous[folderMenu.name]?.starred}})),setIcon:icon=>setIcons(previous=>{const overrides={...previous.overrides};if(icon)overrides[`category:${folderMenu.name}`]=icon;else delete overrides[`category:${folderMenu.name}`];return {...previous,overrides};})}:undefined} save={name=>{const list=isComponent(folderMenu.name)?componentFolders:categories;if(list.some(key=>key!==folderMenu.name&&categoryLabel(key).replace(/^Components \/ /,'').toLocaleLowerCase()===name.toLocaleLowerCase()))throw Error('A folder with that name already exists.');setFolderLabels({...folderLabels,[folderMenu.name]:name});}}/>}
       {quickContact&&<AddContactDialog entries={lib.studio??[]} mutate={mutate} close={()=>setQuickContact(false)} added={id=>{setQuickContact(false);openStudio({section:'leads',page:'contacts',id});}}/>}
-      {customTab&&<Customization initial={customTab} close={()=>setCustomTab(null)} sectionStyle={sectionStyle} chooseSection={setSectionStyle} sidebarLayout={sidebarLayout} chooseLayout={setSidebarLayout} icons={icons} changeIcons={setIcons} iconTargets={iconTargets} generalOptions={generalOptions} saveGeneral={saveGeneral} homeStyle={homeStyle} chooseHome={setHomeStyle} sidebarWidth={sidebarWidth} setSidebarWidth={setSidebarWidth} tileSize={size} setTileSize={setSize} collections={collectionPrefs} setCollections={setCollectionPrefs} sites={sitePrefs} setSites={setSitePrefs} reduced={reducedMotion} setReduced={setReducedMotion} home={homeAppearance} changeHome={setHomeAppearance} manageLibrary={()=>{setCustomTab(null);setModal({kind:'settings'});}}/>}
+      {customTab&&<Customization initial={customTab} close={()=>setCustomTab(null)} sectionStyle={sectionStyle} chooseSection={setSectionStyle} sidebarLayout={sidebarLayout} chooseLayout={setSidebarLayout} icons={icons} changeIcons={setIcons} iconTargets={iconTargets} generalOptions={generalOptions} saveGeneral={saveGeneral} homeStyle={homeStyle} chooseHome={setHomeStyle} sidebarWidth={sidebarWidth} setSidebarWidth={setSidebarWidth} tileSize={defaultSize} setTileSize={setDefaultSize} collections={collectionPrefs} setCollections={setCollectionPrefs} sites={sitePrefs} setSites={setSitePrefs} reduced={reducedMotion} setReduced={setReducedMotion} home={homeAppearance} changeHome={setHomeAppearance} manageLibrary={()=>{setCustomTab(null);setModal({kind:'settings'});}}/>}
       {itemMenu && <ItemMenu target={itemMenu} lib={lib} close={closeItemMenu} report={report}
         organisationActions={<>
           <button role="menuitem" onClick={()=>{setFolderMembers(itemMenu.ids);closeItemMenu();}}><FolderPlus size={13}/>Project folders</button>

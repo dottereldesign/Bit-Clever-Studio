@@ -1,0 +1,40 @@
+<!doctype html><html><head><meta charset="UTF-8"><title>Project folders and ratings</title></head><body><div id="root"></div><pre id="check-result" hidden>pending</pre><script type="module">
+import React from 'react';import {createRoot} from 'react-dom/client';import App from '/src/App.tsx';import '/src/style.css';
+const image='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="#c5d4c1"/></svg>');
+const item=(id,projects,folders,rating=null)=>({id,name:'Reference '+id,path:'https://example.org/'+id,kind:'link',source:'Links/Psychodrama',projects,project_folders:folders,rating,tags:[],modified:1,added:id,missing:false});
+let lib={items:[item(1,[7],[10]),item(2,[7],[]),item(3,[8],[30],5)],categories:['Illustration','Components / Headers'],projects:[{id:7,name:'AANZPA',count:2},{id:8,name:'Other project',count:1}],project_folders:[{id:10,project_id:7,parent_id:null,name:'Research',position:null},{id:11,project_id:7,parent_id:10,name:'Psychodrama',position:null},{id:12,project_id:7,parent_id:null,name:'Branding',position:null},{id:30,project_id:8,parent_id:null,name:'Inspiration',position:null}],tags:[],sources:[],root:'C:/mock',scanning:false};
+let callback=0;window.isTauri=true;window.__TAURI_INTERNALS__={transformCallback:()=>++callback,convertFileSrc:()=>image,invoke:async(command,args)=>{
+ if(command==='get_library')return structuredClone(lib);if(command==='project_file_details')return [];if(command==='get_media')return 'C:/mock.png';if(command==='save_library_preferences'){sessionStorage.setItem('saved-preferences',JSON.stringify(args.preferences));return;}if(command==='diagnostics_record')return;if(command==='storage_usage')return {bytes:0,data_bytes:0,library_bytes:0,app_bytes:0};if(command.startsWith('plugin:event|'))return ++callback;throw Error(command);
+}};window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener(){}};
+import {appHistory} from '/src/appHistory.ts';import {collectBackupPreferences,applyBackupPreferences,flushLibraryPreferences} from '/src/backupPreferences.ts';import {normalizePreference} from '/src/preferenceSchema.ts';
+const pause=ms=>new Promise(r=>setTimeout(r,ms));const assert=(x,m)=>{if(!x)throw Error(m);};async function until(f){for(let i=0;i<400;i++){if(f())return;await pause(20);}throw Error('Timed out');}
+const phase=sessionStorage.getItem('view-phase');if(!phase)localStorage.setItem('tile-size','260');
+createRoot(document.getElementById('root')).render(React.createElement(App,{startOnHome:false}));
+const size=()=>document.querySelector('input[aria-label="Thumbnail size"]');const sort=()=>document.querySelector('select[aria-label="Sort items"]');
+const set=(el,value)=>{Object.getOwnPropertyDescriptor(el.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype,'value').set.call(el,String(value));el.dispatchEvent(new Event(el.tagName==='SELECT'?'change':'input',{bubbles:true}));};
+async function category(name){await until(()=>document.querySelector(`[data-category="${name}"]`));document.querySelector(`[data-category="${name}"]`).click();await pause(80);await until(size);}
+async function folder(id){document.querySelector(`[data-project-folder-id="${id}"]`).click();await pause(80);await until(size);}
+try{
+ await category('Illustration');
+ if(!phase){
+  set(size(),400);set(sort(),'name');await pause(80);
+  await category('Components / Headers');assert(size().value==='260','New folder inherited last slider');set(size(),180);set(sort(),'shuffle');await pause(80);
+  await category('Illustration');assert(size().value==='400'&&sort().value==='name','Design folder lost view');
+  await appHistory.undo();await pause(30);assert(size().value==='400','Undo changed current unrelated folder');await appHistory.redo();
+  document.querySelector('[data-project-id="7"] .nav-item').click();await until(()=>document.querySelector('[data-project-folder-id="10"]'));
+  await folder(10);set(size(),380);document.querySelector('[aria-label="tiles layout"]').click();await pause(80);
+  await folder(12);assert(size().value==='260','Sibling inherited size');set(size(),200);document.querySelector('[aria-label="columns layout"]').click();await pause(80);
+  await folder(10);assert(size().value==='380'&&document.querySelector('[aria-label="tiles layout"]').getAttribute('aria-pressed')==='true','Project folder lost view');
+  const backup=collectBackupPreferences();assert(backup['folder-view-settings']&&backup['project-file-layouts'],'Views missing from backup');
+  assert(normalizePreference('folder-view-settings',{'x':{root:{size:9999,sort:'invalid'}}}).x.root.size===420,'Invalid size not clamped');
+  applyBackupPreferences(backup);await flushLibraryPreferences();assert(JSON.parse(sessionStorage.getItem('saved-preferences'))['folder-view-settings'],'Views not saved natively');
+  sessionStorage.setItem('view-phase','reloaded');location.reload();
+ }else{
+  assert(size().value==='400'&&sort().value==='name','Design view lost on reload');await category('Components / Headers');assert(size().value==='180'&&sort().value==='shuffle','Component view lost on reload');
+  document.querySelector('[data-project-id="7"] .nav-item').click();await until(()=>document.querySelector('[data-project-folder-id="10"]'));
+  await folder(10);assert(size().value==='380'&&document.querySelector('[aria-label="tiles layout"]').getAttribute('aria-pressed')==='true','Project view lost on reload');
+  await folder(12);assert(size().value==='200'&&document.querySelector('[aria-label="columns layout"]').getAttribute('aria-pressed')==='true','Sibling view lost on reload');
+  document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks:['Independent design/component sizes and sort orders','Independent project subfolder sizes and layouts','Undo in another folder does not change the current view','Reload, backup collection, native persistence and preference validation']});
+ }
+}catch(error){document.getElementById('check-result').textContent=JSON.stringify({ok:false,error:String(error)});}
+</script></body></html>

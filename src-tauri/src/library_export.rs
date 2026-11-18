@@ -133,7 +133,22 @@ pub fn restore_preferences_to(folder:&Path, db_path:&Path,data:&Path)->Result<se
     let backup:Backup=serde_json::from_slice(&fs::read(metadata_path(folder)).map_err(err)?).map_err(err)?;
     let current=db::load(db_path,false)?;
     let projects:std::collections::HashMap<String,String>=backup.library.projects.iter().filter_map(|old|current.projects.iter().find(|p|p.name==old.name).map(|new|(old.id.to_string(),new.id.to_string()))).collect();
-    fn rewrite(value:&mut serde_json::Value,folder:&Path,data:&Path,projects:&std::collections::HashMap<String,String>)->Result<()> {
+    let mut folders=std::collections::HashMap::<String,String>::new();
+    for _ in 0..backup.library.project_folders.len(){
+        let before=folders.len();
+        for old in &backup.library.project_folders {
+            if folders.contains_key(&old.id.to_string()){continue;}
+            let Some(project)=projects.get(&old.project_id.to_string()) else{continue;};
+            let parent=match old.parent_id {None=>None,Some(id)=>{let Some(mapped)=folders.get(&id.to_string()) else{continue;};Some(mapped.parse::<i64>().map_err(err)?)} };
+            if let Some(new)=current.project_folders.iter().find(|f|f.project_id.to_string()==*project&&f.parent_id==parent&&f.name==old.name){folders.insert(old.id.to_string(),new.id.to_string());}
+        }
+        if folders.len()==before{break;}
+    }
+    // Never attach an absent backup project's view settings to a reused destination ID.
+    for key in ["folder-view-settings","project-file-layouts"]{
+        if let Some(settings)=value.get_mut(key).and_then(|v|v.as_object_mut()){settings.retain(|key,_|key.strip_prefix("project:").is_none_or(|id|projects.contains_key(id)));}
+    }
+    fn rewrite(value:&mut serde_json::Value,folder:&Path,data:&Path,projects:&std::collections::HashMap<String,String>,folders:&std::collections::HashMap<String,String>)->Result<()> {
         match value {
             serde_json::Value::String(s) if s.starts_with("Appearance/")=>{
                 let source=PathBuf::from(resolve_relative(folder,s)?);
@@ -147,13 +162,13 @@ pub fn restore_preferences_to(folder:&Path, db_path:&Path,data:&Path)->Result<se
                 } else {*s=source.to_string_lossy().into_owned();}
             },
             serde_json::Value::String(s) if s.starts_with("project:")=>{if let Some(id)=projects.get(&s[8..]){*s=format!("project:{id}");}},
-            serde_json::Value::Array(values)=>for v in values{rewrite(v,folder,data,projects)?;},
+            serde_json::Value::Array(values)=>for v in values{rewrite(v,folder,data,projects,folders)?;},
             serde_json::Value::Object(values)=>{
                 if values.get("kind").and_then(|v|v.as_str())==Some("project") {
                     if let Some(id)=values.get("value").and_then(|v|v.as_str()).and_then(|id|projects.get(id)).cloned(){values.insert("value".into(),id.into());}
                 }
                 let old=std::mem::take(values);
-                for (mut key,mut v) in old {if let Some(id)=key.strip_prefix("project:").and_then(|id|projects.get(id)){key=format!("project:{id}");}rewrite(&mut v,folder,data,projects)?;values.insert(key,v);}
+                for (mut key,mut v) in old {if let Some(id)=key.strip_prefix("project:").and_then(|id|projects.get(id)){key=format!("project:{id}");}if let Some(id)=key.strip_prefix("folder:"){let Some(mapped)=folders.get(id) else{continue;};key=format!("folder:{mapped}");}rewrite(&mut v,folder,data,projects,folders)?;values.insert(key,v);}
             },_=>{}
         }Ok(())
     }
@@ -163,7 +178,7 @@ pub fn restore_preferences_to(folder:&Path, db_path:&Path,data:&Path)->Result<se
             ids.retain(|id|id.as_str().and_then(|s|s.strip_prefix("project:")).is_some_and(|id|projects.contains_key(id)));
         }}
     }
-    rewrite(&mut value,folder,data,&projects)?;
+    rewrite(&mut value,folder,data,&projects,&folders)?;
     Ok(value)
 }
 
@@ -396,12 +411,12 @@ mod tests {
         conn.execute_batch("INSERT INTO project_folders VALUES(1,7,NULL,'Research',NULL),(2,7,1,'Psychodrama',0);INSERT INTO item_project_folders VALUES(1,2);UPDATE items SET rating=5 WHERE kind='link';").unwrap();
         db::change(&path,serde_json::from_value(serde_json::json!({"action":"set_category","ids":[2],"value":"Social Media"})).unwrap()).unwrap();
         let cover=path.parent().unwrap().join("home-covers/cover.png");fs::create_dir_all(cover.parent().unwrap()).unwrap();fs::write(&cover,b"cover bytes").unwrap();
-        let prefs=serde_json::json!({"colour-history":[{"hex":"#ABCDEF","projects":["project:7","project:999"]}],"home-tiles":[{"id":"project:7","cover":{"path":cover,"width":10,"height":10}}],"app-icons":{"overrides":{"project:7":{"kind":"asset","value":cover}}},"folder-labels":{"Mobile":"iOS & Android"},"collection-shortcuts":[{"target":{"kind":"project","value":"7"}}]});
+        let prefs=serde_json::json!({"folder-view-settings":{"project:7":{"folder:2":{"size":400,"sort":"name"},"folder:999":{"size":160}},"project:999":{"root":{"size":300}}},"project-file-layouts":{"project:7":{"layout":"details","folders":{"folder:2":{"layout":"tiles"}}}},"colour-history":[{"hex":"#ABCDEF","projects":["project:7","project:999"]}],"home-tiles":[{"id":"project:7","cover":{"path":cover,"width":10,"height":10}}],"app-icons":{"overrides":{"project:7":{"kind":"asset","value":cover}}},"folder-labels":{"Mobile":"iOS & Android"},"collection-shortcuts":[{"target":{"kind":"project","value":"7"}}]});
         let result=export_with_preferences(&path,&destination,"Complete",prefs,&AtomicBool::new(false),&mut |_|{}).unwrap();
         let moved=temp.path().join("external drive copy");fs::rename(result.path,&moved).unwrap();
         let checked=verify(&moved).unwrap();assert_eq!(checked.missing.len(),1);
         let restored=temp.path().join("new app");fs::create_dir(&restored).unwrap();let restored=restored.join("library.sqlite");db::init(&restored).unwrap();
-        let db2=db::connect(&restored).unwrap();db2.execute("INSERT INTO projects(id,name) VALUES(7,'Unrelated project')",[]).unwrap();
+        let db2=db::connect(&restored).unwrap();db2.execute("INSERT INTO projects(id,name) VALUES(7,'Unrelated project')",[]).unwrap();db2.execute_batch("INSERT INTO project_folders VALUES(1,7,NULL,'Unrelated folder',NULL),(2,7,1,'Unrelated child',NULL);").unwrap();
         db::import(&restored,metadata_path(&moved)).unwrap();
         let lib=db::load(&restored,false).unwrap();let item=lib.items.iter().find(|i|i.name=="Reference 1").unwrap();
         assert_eq!(item.component_folders,vec!["Components / Headers","Components / Navbars"]);
@@ -409,6 +424,10 @@ mod tests {
         let design=lib.items.iter().find(|i|i.name=="Reference 2").unwrap();assert!(design.design_folders.contains(&"Social Media".to_string()));assert!(design.design_folders.len()>1);
         assert!(fs::read_to_string(moved.join("Browse Library.html")).unwrap().contains("Social Media"));
         let settings=restore_preferences(&moved,&restored).unwrap();let project=lib.projects.iter().find(|p|p.name=="Keep project").unwrap();
+        assert_eq!(settings["folder-view-settings"][format!("project:{}",project.id)][format!("folder:{}",child.id)]["size"],400);
+        assert_eq!(settings["project-file-layouts"][format!("project:{}",project.id)]["folders"][format!("folder:{}",child.id)]["layout"],"tiles");
+        assert!(settings["folder-view-settings"].get("project:999").is_none());
+        assert!(settings["folder-view-settings"][format!("project:{}",project.id)].get("folder:999").is_none());
         assert_eq!(settings["home-tiles"][0]["id"],format!("project:{}",project.id));
         assert_eq!(settings["colour-history"][0]["projects"].as_array().unwrap().len(),1);assert_eq!(settings["colour-history"][0]["hex"],"#ABCDEF");assert_eq!(settings["colour-history"][0]["projects"][0],format!("project:{}",project.id));
         assert_eq!(settings["collection-shortcuts"][0]["target"]["value"],project.id.to_string());
