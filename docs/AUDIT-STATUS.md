@@ -102,6 +102,14 @@ Disposable native tests cover app-owner termination with downloader/transcoder d
 
 Automated validation: 136 native tests passed (12 opt-in/worker tests ignored), 118 frontend tests, the fresh native-to-frontend contract, TypeScript, version consistency and diagnostics guard passed. Video queue, library-isolation and full-export browser workflows passed at both configured viewport sizes using isolated headless profiles. The user confirmed Design Dev opens and all requested smoke checks pass. Normal native compilation also passed; no desktop automation, installer or release was used for this recovery batch.
 
+## Release preparation and dependency recheck — 18 November 2026
+
+The user verified the final recovery batch in Design Dev and requested main integration and a Windows release. Version 0.5.0 collects the completed reliability, accessibility, customisation and recovery batches. Personal uncommitted frontend edits remain outside the release.
+
+A fresh npm audit still reports four high-severity dependency nodes from the same unpatched Picomatch advisory; registry latest remains 4.0.7. Node 22.23.5 and Vite 6.4.6 remain current within the pinned lines. No unsafe audit downgrade or advisory suppression was applied. A fresh OSV scan of 543 Rust dependencies reports the same seven non-Windows packages listed above; none appears in the Windows x64 dependency tree. The Vite fix already on this branch will reach main through integration. Dependency monitoring remains ongoing rather than a claim of zero vulnerabilities.
+
+Main integration requires the protected app/native checks. Publication must follow integration and verify the installer against its release manifest and SHA-256. Hardware qualification, real-workload performance and the manual assistive-technology acceptance below are not release claims.
+
 ## Still outstanding
 
 1. **Dependency monitoring.** Recheck Picomatch for a published fix, keep the pinned Node 22 patch current, and review the non-Windows Rust notices before adding targets. The SQLite/Vite/Node maintenance changes are described above.
