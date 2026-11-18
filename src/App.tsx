@@ -1476,6 +1476,14 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
         />
       </aside>
       <main inert={thumbnailEnlarged || !!customTab || quickPreview !== null || (viewer !== null && !widePreview) || (!!modal&&modal.kind!=='settings') || !!capture || !!videoDialog || duplicatesOpen || removedOpen || libraryExportOpen || storageOpen}>
+        {error && (
+          <div className="error-banner" role="alert">
+            <span>{error}</span>
+            <IconButton title="Dismiss error" onClick={() => setError("")}>
+              <X size={14} />
+            </IconButton>
+          </div>
+        )}
         {modal?.kind==='settings'?libraryDialog:<>{studioView?.section==='business'?<MyBusiness page={studioView.page} open={page=>openStudio({section:'business',page})}/>:studioView?.section==='analytics'?<Analytics lib={lib} page={studioView.page} open={openStudio} openProject={navigate} customize={()=>setCustomTab('analytics')}/>:studioView?.section==='clients'?<ClientsWorkspace initialise={initialiseClients} lib={lib} route={studioView} navigate={setStudioView} mutate={mutate} importInto={importStudio} preview={item=>item.kind==='link'?void openUrl(item.path).catch(report):setQuickPreview(item.id)} openProject={id=>navigate(id)}/>:studioView?.section==='research'?<ResearchWorkspace lib={lib} route={studioView} navigate={setStudioView} mutate={mutate} importInto={importStudio} preview={item=>{if(item.kind==='link')void openUrl(item.path).catch(report);else {setReceiptBrowse((lib.studio??[]).find(e=>e.id===studioView.id)?.files??[item.id]);setQuickPreview(item.id);}}} openProject={id=>navigate(id)}/>:studioView?<StudioWorkspace lib={lib} route={studioView} navigate={setStudioView} mutate={mutate} importInto={importStudio} preview={item=>{if(item.kind==='link')void openUrl(item.path).catch(report);else{setReceiptBrowse((lib.studio??[]).find(e=>e.id===studioView.id)?.files??[item.id]);setQuickPreview(item.id);}}} openProject={id=>navigate(id)}/>:homeView?<><HomeDashboard summaryShare={homeOverviewPrefs.share} summary={homeOverviewPrefs.enabled&&(homeOverviewPrefs.events||homeOverviewPrefs.projects||homeOverviewPrefs.revenue)?<HomeOverview lib={lib} prefs={homeOverviewPrefs} openProject={id=>{navigate(id);setProjectSection("overview");}} openStudio={openStudio}/>:undefined} headerActions={<ColourPicker projects={lib.projects}/>} icons={icons} style={homeStyle} appearance={homeAppearance} destinations={homeDestinations} open={openHomeDestination} incoming={homeDrop} received={()=>setHomeDrop(null)} dragging={!!homeShortcutDrag.ghost}/></>:<>
         <header className="topbar">
           <div className="view-title">
@@ -1536,14 +1544,6 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
         {(readingCapture||pendingImports>0) && (
           <div className="capture-reading">
             <CaptureProgress progress={importProgress} queued={Math.max(0,pendingImports-1)}/>
-          </div>
-        )}
-        {error && (
-          <div className="error-banner" role="alert">
-            <span>{error}</span>
-            <IconButton title="Dismiss error" onClick={() => setError("")}>
-              <X size={14} />
-            </IconButton>
           </div>
         )}
         <div

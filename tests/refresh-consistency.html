@@ -60,6 +60,10 @@ try {
   held=false;emit('library-changed');await until(()=>active===0,'Later refresh finished');await pause(30);
   assert(appHistory.past.filter(entry=>entry.label==='Current history').length===1,'Repeated snapshot duplicated history');
   checks.push('Repeated accepted snapshots do not duplicate undo history');
+  library.maintenance_warning='Saved your changes, but library files need recovery. Reconnect the fixture drive.';
+  emit('library-changed');await until(()=>document.body.textContent.includes('Reconnect the fixture drive.'),'Recovery warning displayed');
+  library.maintenance_warning=null;emit('library-changed');await until(()=>!document.body.textContent.includes('Reconnect the fixture drive.'),'Repaired warning clears');
+  checks.push('Interrupted-file warning clears when the recovered native snapshot arrives');
   document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks,maximumConcurrentReads:maximum});
 } catch(error) {
   document.getElementById('check-result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack,checks});

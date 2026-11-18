@@ -6,6 +6,7 @@ mod website_capture;
 mod storage;
 mod clipboard;
 mod content;
+mod file_moves;
 mod db;
 mod download;
 mod library;
@@ -602,6 +603,7 @@ fn main() {
             let library_data=db_path.parent().unwrap().to_path_buf();
             let schema_start=std::time::Instant::now();diagnostics::event("library.schema","started",0.,serde_json::json!({}));
             let schema_result=db::init(&db_path);diagnostics::event("library.schema",if schema_result.is_ok(){"success"}else{"error"},schema_start.elapsed().as_secs_f64()*1000.,serde_json::json!({}));schema_result?;
+            file_moves::recover_on_startup(&db_path)?;
             let db = db::connect(&db_path)?;
             if managed_library::root(&db_path)?.is_none(){resources::seed(&db)?;}
             if db::setting(&db, "root").is_none() {
@@ -771,3 +773,6 @@ mod performance_tests;
 
 #[cfg(test)]
 mod recovery_contract_tests;
+
+#[cfg(test)]
+mod interruption_tests;

@@ -23,7 +23,7 @@ fn configure(db:&rusqlite::Connection,folder:&Path)->Result<()>{
 pub fn open(folder:&Path)->Result<PathBuf>{
     let folder=folder.canonicalize().map_err(err)?;
     let path=folder.join("Library Data/Library.sqlite");
-    if path.is_file(){rebase(&path,&folder)?;return Ok(path);}
+    if path.is_file(){rebase(&path,&folder)?;crate::file_moves::init(&db::connect(&path)?)?;crate::file_moves::reconcile(&path)?;return Ok(path);}
     let report=library_export::verify(&folder)?;
     if !report.missing.is_empty(){return Err(format!("This backup has {} unavailable files. Repair the source library before using it as a complete library.",report.missing.len()));}
     let temporary=folder.join("Library Data/Creating.sqlite");
@@ -64,6 +64,9 @@ pub fn rebase(path:&Path,folder:&Path)->Result<()> {
         let patches={let mut q=tx.prepare(&format!("SELECT id,patches FROM {table}")).map_err(err)?;let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?))).map_err(err)?;rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?};
         for (id,text) in patches {let mut value:serde_json::Value=serde_json::from_str(&text).map_err(err)?;rewrite_paths(&mut value,&old,&folder);tx.execute(&format!("UPDATE {table} SET patches=? WHERE id=?"),rusqlite::params![value.to_string(),id]).map_err(err)?;}
     }
+    crate::file_moves::init(&tx)?;
+    let moves={let mut q=tx.prepare("SELECT item_id,source,destination FROM file_move_journal").map_err(err)?;let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(err)?;rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?};
+    for (id,source,destination) in moves {let rebase=|s:String|Path::new(&s).strip_prefix(&old).map(|p|folder.join(p).to_string_lossy().into_owned()).unwrap_or(s);tx.execute("UPDATE file_move_journal SET source=?,destination=? WHERE item_id=?",rusqlite::params![rebase(source),rebase(destination),id]).map_err(err)?;}
     let recovery={let mut q=tx.prepare("SELECT item_id,original_path,recovery_path FROM duplicate_recovery").map_err(err)?;let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(err)?;rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?};
     for (id,original,recovery) in recovery {let rebase=|s:String|Path::new(&s).strip_prefix(&old).map(|p|folder.join(p).to_string_lossy().into_owned()).unwrap_or(s);tx.execute("UPDATE duplicate_recovery SET original_path=?,recovery_path=? WHERE item_id=?",rusqlite::params![rebase(original),rebase(recovery),id]).map_err(err)?;}
     configure(&tx,&folder)?;tx.commit().map_err(err)
@@ -71,6 +74,7 @@ pub fn rebase(path:&Path,folder:&Path)->Result<()> {
 pub fn preferences(path:&Path)->Result<Option<serde_json::Value>>{let db=db::connect(path)?;if db::setting(&db,"managed_root").is_none(){return Ok(None);}Ok(Some(serde_json::from_str(&db::setting(&db,"appearance_preferences").unwrap_or_else(||"{}".into())).map_err(err)?))}
 pub fn save_preferences(path:&Path,value:&serde_json::Value)->Result<()>{if root(path)?.is_none(){return Ok(());}db::set_setting(&db::connect(path)?,"appearance_preferences",&serde_json::to_string(value).map_err(err)?)?;after_commit(path,false);Ok(())}
 pub fn refresh_browser(path:&Path)->Result<()>{
+    crate::file_moves::reconcile(path)?;
     let Some(folder)=root(path)? else{return Ok(())};let mut lib=db::load(path,false)?;
     update_inventory(path,&folder,&lib)?;
     for item in &mut lib.items {if item.kind!="link"{item.path=Path::new(&item.path).strip_prefix(&folder).map_err(|_|"Library file is outside its folder")?.to_string_lossy().replace('\\',"/");}}
@@ -112,6 +116,7 @@ pub fn verify_live(folder:&Path)->Result<library_export::Verification>{
 }
 // Folder memberships identify the section. Refiling moves only the owned copy.
 pub fn organise(path:&Path)->Result<()> {
+    crate::file_moves::reconcile(path)?;
     let Some(folder)=root(path)? else{return Ok(())};let lib=db::load(path,false)?;let db=db::connect(path)?;
     for item in lib.items.iter().filter(|i|i.kind!="link") {
         let source=Path::new(&item.path);let destination=folder.join(library_export::collection(item));

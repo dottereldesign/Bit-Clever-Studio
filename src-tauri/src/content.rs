@@ -20,7 +20,7 @@ pub struct Fingerprint {
     pub size: i64,
     pub modified: i64,
 }
-fn hash_file(path: &Path) -> Result<String> {
+pub(crate) fn hash_file(path: &Path) -> Result<String> {
     let mut file = fs::File::open(path).map_err(err)?;
     let mut hash = Sha256::new();
     let mut buffer = vec![0; 1024 * 1024];
@@ -771,29 +771,8 @@ pub fn clipboard_files(paths: Vec<PathBuf>) -> Result<ClipboardContent> {
         url: String::new(),
     })
 }
-fn move_file(source: &Path, destination: &Path) -> Result<()> {
-    if destination.exists() {
-        return Err("The destination already exists.".into());
-    }
-    if fs::rename(source, destination).is_ok() {
-        return Ok(());
-    }
-    let mut input = fs::File::open(source).map_err(err)?;
-    let mut output = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(destination)
-        .map_err(err)?;
-    std::io::copy(&mut input, &mut output).map_err(err)?;
-    output.sync_all().map_err(err)?;
-    drop(output);
-    drop(input);
-    if hash_file(source)? != hash_file(destination)? {
-        return Err("Copy verification failed. The original was kept.".into());
-    }
-    fs::remove_file(source).map_err(err)
-}
 pub fn remove_duplicates(db_path: &Path, data: &Path, keeper: i64, ids: Vec<i64>) -> Result<usize> {
+    crate::file_moves::reconcile(db_path)?;
     if ids.contains(&keeper) {
         return Err("The retained copy cannot be removed.".into());
     }
@@ -813,13 +792,17 @@ pub fn remove_duplicates(db_path: &Path, data: &Path, keeper: i64, ids: Vec<i64>
         if id == keeper {
             return Err("The retained copy cannot be removed.".into());
         }
-        let original: String = db
+        let original: Option<String> = db
             .query_row(
                 "SELECT path FROM items WHERE id=? AND archived=0 AND kind!='link'",
                 [id],
                 |r| r.get(0),
-            )
-            .map_err(err)?;
+            ).optional().map_err(err)?;
+        let Some(original)=original else {
+            let already_removed:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM duplicate_recovery WHERE item_id=? AND keeper_id=?)",params![id,keeper],|r|r.get(0)).map_err(err)?;
+            if already_removed {continue;}
+            return Err("A selected duplicate is unavailable. Scan again.".into());
+        };
         let fp = fingerprint(Path::new(&original))?;
         if fp.file != kept_fp.file && !(fp.pixels.is_some() && fp.pixels == kept_fp.pixels) {
             return Err("These files are no longer identical. Scan again.".into());
@@ -832,6 +815,9 @@ pub fn remove_duplicates(db_path: &Path, data: &Path, keeper: i64, ids: Vec<i64>
                 .unwrap_or_default()
                 .to_string_lossy()
         ));
+        crate::file_moves::record(&db,id,Path::new(&original),&recovery)?;
+        crate::file_moves::checkpoint("remove.after_intent");
+        let result=(|| -> Result<()> {
         let tx = db.transaction().map_err(err)?;
         tx.execute("INSERT INTO item_projects(item_id,label_id,favourite) SELECT ?,label_id,favourite FROM item_projects WHERE item_id=? ON CONFLICT(item_id,label_id) DO UPDATE SET favourite=MAX(favourite,excluded.favourite)",params![keeper,id]).map_err(err)?;
         tx.execute("INSERT OR IGNORE INTO item_tags(item_id,label_id) SELECT ?,label_id FROM item_tags WHERE item_id=?",params![keeper,id]).map_err(err)?;
@@ -862,11 +848,13 @@ pub fn remove_duplicates(db_path: &Path, data: &Path, keeper: i64, ids: Vec<i64>
         .map_err(err)?;
         tx.execute("UPDATE items SET archived=1 WHERE id=?", [id])
             .map_err(err)?;
-        move_file(Path::new(&original), &recovery)?;
-        if let Err(e) = tx.commit() {
-            let _ = move_file(&recovery, Path::new(&original));
-            return Err(err(e));
-        }
+        crate::file_moves::move_file(Path::new(&original), &recovery)?;
+        crate::file_moves::checkpoint("remove.after_move");
+        crate::file_moves::finish(&tx,id)?;
+        tx.commit().map_err(err)
+        })();
+        if let Err(error)=result {return Err(crate::file_moves::rollback_error(db_path,error));}
+        crate::file_moves::checkpoint("remove.after_commit");
         removed += 1;
     }
     Ok(removed)
@@ -894,27 +882,37 @@ pub fn recovery(db_path: &Path) -> Result<Vec<Recovery>> {
     Ok(rows)
 }
 pub fn restore(db_path: &Path, id: i64) -> Result<()> {
+    crate::file_moves::reconcile(db_path)?;
     let mut db = db::connect(db_path)?;
-    let (original, recovered): (String, String) = db
+    let recovery: Option<(String, String)> = db
         .query_row(
             "SELECT original_path,recovery_path FROM duplicate_recovery WHERE item_id=?",
             [id],
             |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .map_err(err)?;
+        ).optional().map_err(err)?;
+    let Some((original,recovered))=recovery else {
+        let active:Option<String>=db.query_row("SELECT path FROM items WHERE id=? AND archived=0 AND kind!='link'",[id],|r|r.get(0)).optional().map_err(err)?;
+        if active.is_some_and(|path|Path::new(&path).is_file()){return Ok(());}
+        return Err("The recovery item is unavailable. Reconnect its drive and retry.".into());
+    };
     if Path::new(&original).exists() {
         return Err("A file already exists at the original location.".into());
     }
+    crate::file_moves::record(&db,id,Path::new(&recovered),Path::new(&original))?;
+    crate::file_moves::checkpoint("restore.after_intent");
+    let result=(|| -> Result<()> {
     let tx = db.transaction().map_err(err)?;
     tx.execute("UPDATE items SET archived=0,missing=0 WHERE id=?", [id])
         .map_err(err)?;
     tx.execute("DELETE FROM duplicate_recovery WHERE item_id=?", [id])
         .map_err(err)?;
-    move_file(Path::new(&recovered), Path::new(&original))?;
-    if let Err(e) = tx.commit() {
-        let _ = move_file(Path::new(&original), Path::new(&recovered));
-        return Err(err(e));
-    }
+    crate::file_moves::move_file(Path::new(&recovered), Path::new(&original))?;
+    crate::file_moves::checkpoint("restore.after_move");
+    crate::file_moves::finish(&tx,id)?;
+    tx.commit().map_err(err)
+    })();
+    if let Err(error)=result {return Err(crate::file_moves::rollback_error(db_path,error));}
+    crate::file_moves::checkpoint("restore.after_commit");
     Ok(())
 }
 

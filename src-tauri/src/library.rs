@@ -26,11 +26,13 @@ pub fn kind(path: &Path) -> Option<&'static str> {
     }
 }
 pub fn scan(db_path: &Path, root: &Path) -> Result<usize> {
+    crate::file_moves::reconcile(db_path)?;
     let count=scan_named(db_path, root, "")?;
     refresh_missing(db_path)?;
     Ok(count)
 }
 pub fn scan_all(db_path: &Path) -> Result<usize> {
+    crate::file_moves::reconcile(db_path)?;
     let db = db::connect(db_path)?;
     let roots = crate::sources::roots(&db);
     if roots.is_empty() {

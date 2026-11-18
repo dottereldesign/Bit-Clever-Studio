@@ -195,6 +195,7 @@ pub fn export(db_path: &Path, destination: &Path, name: &str, cancel: &AtomicBoo
 }
 
 pub fn export_with_preferences(db_path: &Path, destination: &Path, name: &str, mut preferences: serde_json::Value, cancel: &AtomicBool, progress: &mut impl FnMut(Progress)) -> Result<ExportResult> {
+    crate::file_moves::reconcile(db_path)?;
     let destination=destination.canonicalize().map_err(err)?;
     if !destination.is_dir() {return Err("Choose a backup folder.".into());}
     let conn=db::connect(db_path)?;

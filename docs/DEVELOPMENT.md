@@ -184,3 +184,5 @@ Reset preferences saves a local copy of the current appearance, layout and short
 The tests do not substitute for manual NVDA/Narrator speech verification or prove contrast/accessibility across every app surface. For desktop spot checks, open Duplicates from Settings → Library, traverse with Tab/Shift+Tab and close with Escape, then check both colour pickers. Avoid removing real duplicates for this check.
 
 For backup coverage and the disposable native restore command (`npm run verify:restore`), see [backup verification](BACKUPS.md). With no arguments it uses only synthetic fixtures; `-- --folder "PATH"` explicitly selects a complete export for read-only source verification.
+
+For disposable child-process interruption tests and recovery guarantees/limits, see [interrupted operations](RECOVERY.md). Run `npm run test:native -- interruption_tests`; do not invoke the ignored crash worker directly or induce failures in Design Dev.
