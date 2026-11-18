@@ -94,3 +94,11 @@ The two retained reports each record one run on 3 November 2026 UTC at 1920 × 1
 | Long-task time | 11,304 ms | 1,656 ms |
 
 Overlap checks, Space-preview return/focus, full-viewer breakpoints, link-board interactions and drag operations should accompany future gallery changes. `npm run test:grid`, `npm run test:preview`, `npm run test:boards` and `npm run test:drag` cover those workflows. Run checks using port 1421 sequentially; the side-preview check uses port 1422.
+
+## Background collection thumbnails — 19 November 2026
+
+Opening a media collection now queues uncached image, animation and video thumbnails after a short viewport-first delay. The grid still mounts only nearby cards. One background task runs at a time, within the existing three-worker media limit; visible cards and previews can use the remaining slots and overtake queued background work. Shared requests decode only once, and an unmounted card returns to background priority if collection warming still needs it.
+
+Changing the collection/filter or leaving the gallery cancels unstarted background requests. Native work already running finishes normally and keeps its cache result. Completed thumbnails use the existing disk cache, so warming does not require scrolling or keeping every image mounted. It runs only while the app is open; it does not generate thumbnails for missing originals, file attachments or web links, and failures do not loop automatically. Card Retry remains available.
+
+Validation: queue tests cover 700 jobs, a failed original, foreground capacity, shared requests, priority changes and cancellation. The headless gallery fixture processes all 700 thumbnails without scrolling at both 1440×940 and 960×700, keeps mounting bounded and reuses the cache across folders. All 121 frontend tests and TypeScript passed. The user confirmed background thumbnail loading works in their real library in Design Dev. The older profiling measurements above predate background warming and should not be treated as measurements of this new scheduling policy.

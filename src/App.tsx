@@ -97,7 +97,7 @@ import {
   Undo2,
   Redo2,
 } from "lucide-react";
-import { changeLibrary, loadLibrary, media, cachedMedia, prioritizeThumbnail, forgetMedia, type Change } from "./api";
+import { changeLibrary, loadLibrary, media, cachedMedia, warmThumbnails, prioritizeThumbnail, forgetMedia, type Change } from "./api";
 import ThumbnailProgress from "./ThumbnailProgress";
 import { canCopyImage, isResource, isBoardLink, isCollectionLink, boardNames, isBoardDestination, type BoardKey, type LinkDestination, filterItems, type Item, type Label, type Library } from "./model";
 import ContactSheet from "./ContactSheet";
@@ -517,6 +517,13 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
     },
     [studioView,lib.items, membershipIndex, lib.project_folders, projectSection, projectFolder, ratingFilter, search, type, tags, source, project, linksOnly, sort, seed, boardView, videoView,category,tagMode,recent,viewedOrder,allCategoriesView,generalEntry,generalMissing,resourcesView],
   );
+  useEffect(()=>{
+    if(homeView||studioView)return;
+    let stop:(()=>void)|undefined;
+    // Let the initial viewport claim its slots before filling the background queue.
+    const timer=window.setTimeout(()=>{stop=warmThumbnails(filtered);},250);
+    return()=>{window.clearTimeout(timer);stop?.();};
+  },[filtered,homeView,studioView]);
   useEffect(()=>{if(quickPreview===null)setReceiptBrowse([]);},[quickPreview]);
   const boardItems = boardView ? filtered : [];
   const customCollection = !!generalEntry?.layout && generalEntry.layout !== 'auto';

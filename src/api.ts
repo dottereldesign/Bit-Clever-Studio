@@ -23,6 +23,17 @@ export const prioritizeThumbnail=(item:Item,visible:boolean)=>mediaQueue.priorit
 export function forgetMedia(item: Item, mode: string) {
   cache.delete(`${item.id}:${item.modified}:${item.path}:${item.thumbnail ?? ''}:${mode}`);
 }
+// The viewport keeps priority 0/1; collection warming uses one low-priority slot.
+// This creates cache files through the normal native path, without mounting images.
+export function warmThumbnails(items: readonly Item[]): () => void {
+  const abort=new AbortController();
+  for(const item of items){
+    if(abort.signal.aborted)break;
+    if(item.missing||!["image","animation","video"].includes(item.kind)||cachedMedia(item,"thumbnail"))continue;
+    void media(item,"thumbnail",abort.signal,2).catch(()=>{/* Card Retry remains available; don't loop on broken originals. */});
+  }
+  return ()=>abort.abort();
+}
 export async function media(
   item: Item,
   mode: string,
