@@ -1,3 +1,4 @@
+import {useActiveColours} from './ActiveColourControls';
 import {useEffect,useLayoutEffect,useRef,useState,type CSSProperties} from 'react';
 import {createPortal} from 'react-dom';
 import {Palette,X} from 'lucide-react';
@@ -18,6 +19,7 @@ const greens=[
 ] as const;
 
 export default function SidebarGreenPicker({blocked=false}:{blocked?:boolean}){
+  useActiveColours();
   const [saved,setSaved]=useHistoryState<string>('sidebar-active-green',()=>{try{return JSON.parse(localStorage.getItem('sidebar-active-green')??'"emerald"');}catch{return 'emerald';}},'Sidebar active green');
   const [emeraldApplied,,markEmeraldApplied]=useHistoryState<boolean>('sidebar-emerald-default-applied',()=>localStorage.getItem('sidebar-emerald-default-applied')==='true','Emerald default applied');
   useEffect(()=>{if(!emeraldApplied){setSaved('emerald');markEmeraldApplied(true);}},[emeraldApplied,setSaved,markEmeraldApplied]);
@@ -44,7 +46,7 @@ export default function SidebarGreenPicker({blocked=false}:{blocked?:boolean}){
     <button ref={trigger} className="sidebar-green-trigger" aria-label="Green variations" aria-expanded={open} aria-haspopup="dialog" aria-controls={open?"sidebar-green-dialog":undefined} onClick={()=>setOpen(!open)}><Palette size={15}/><span>Green variations</span><i style={{background:selected.background}}/></button>
     {open&&<div ref={panel} id="sidebar-green-dialog" className="sidebar-green-panel" role="dialog" aria-labelledby="sidebar-green-title" onKeyDown={event=>event.stopPropagation()}>
       <header><h2 id="sidebar-green-title">Active folder colour</h2><button aria-label="Close green variations" onClick={()=>{setOpen(false);trigger.current?.focus();}}><X size={16}/></button></header>
-      <p>Select a folder, then try a green. Changes apply live.</p>
+      <p>Select a folder, then try a green. Custom active colours in Customise / Sidebar take priority.</p>
       <fieldset><legend>10 green variations</legend><div className="sidebar-green-options">{greens.map((green,index)=><label key={green.id} style={{'--green-background':green.background,'--green-ink':green.ink} as CSSProperties}><input type="radio" name="sidebar-active-green" value={green.id} checked={selected.id===green.id} onChange={()=>setSaved(green.id)}/><span className="sidebar-green-sample" aria-hidden="true"><span>{String(index+1).padStart(2,'0')}</span>Selected folder</span><span className="sidebar-green-name">{green.name}</span></label>)}</div></fieldset>
       <footer><span>{selected.name}</span><span>Saved automatically</span></footer>
     </div>}

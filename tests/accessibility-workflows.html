@@ -1,0 +1,59 @@
+<!doctype html><html><head><meta charset="UTF-8"><title>Active colours and dialog keyboard checks</title></head><body>
+<div id="root"></div><pre id="check-result" hidden>pending</pre><script type="module">
+import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
+import VideoDownloadDialog from '/src/VideoDownloadDialog.tsx';import RemovedDialog from '/src/RemovedDialog.tsx';import CaptureDialog from '/src/CaptureDialog.tsx';
+import ActiveColourControls,{useActiveColours} from '/src/ActiveColourControls.tsx';
+import {appHistory} from '/src/appHistory.ts';import '/src/style.css';import '/src/appearance.css';import '/src/tabAppearance.css';
+let callback=0,submissions=0,finishRestore;
+window.isTauri=true;window.__TAURI_INTERNALS__={transformCallback:()=>++callback,convertFileSrc:p=>p,invoke:async(command)=>{
+ if(command==='removed_items')return Array.from({length:30},(_,id)=>({id,name:'Removed reference '+id,path:'C:/Synthetic/long-folder/reference.png'}));
+ if(command==='save_library_preferences'||command==='diagnostics_record')return false;
+ if(command.startsWith('plugin:event|'))return ++callback;
+ throw Error(command);
+}};window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener(){}};
+const lib={items:[],projects:Array.from({length:28},(_,id)=>({id:id+1,name:'Project '+(id+1),count:0})),tags:[{id:1,name:'Reference'}],sources:[],root:'C:/Synthetic',scanning:false};
+const h=React.createElement;
+function Harness(){const [dialog,setDialog]=useState('');useActiveColours();return h(React.Fragment,null,
+ h('div',{className:'app',style:{display:'block',overflow:'auto',height:'100vh'}},
+ h('button',{id:'opener',onClick:()=>setDialog('video')},'Open videos'),h('button',{id:'removed-opener',onClick:()=>setDialog('removed')},'Open removed'),h('button',{id:'capture-opener',onClick:()=>setDialog('capture')},'Open capture'),
+ h('div',{className:'sidebar'},h('button',{className:'nav-item source-active',id:'sample-sidebar'},h('svg',{width:16,height:16}),h('span',null,'Selected folder'),h('small',null,'12'))),
+ h('nav',{className:'app-tabs'},h('button',{'aria-current':'page',id:'sample-tabs'},h('svg',{width:16,height:16}),h('span',null,'Selected tab'),h('small',null,'12'))),
+ h('button',{'aria-pressed':true,id:'sample-buttons'},h('svg',{width:16,height:16}),h('span',null,'Selected button'),h('small',null,'12')),
+ ...['sidebar','tabs','buttons'].map(group=>h(ActiveColourControls,{group,key:group}))),
+ dialog==='video'&&h(VideoDownloadDialog,{initialUrl:'https://example.com/video',lib,project:null,close:()=>setDialog(''),add:()=>submissions++}),
+ dialog==='removed'&&h(RemovedDialog,{revision:1,close:()=>setDialog(''),restore:()=>new Promise(resolve=>{finishRestore=resolve;})}),
+ dialog==='capture'&&h(CaptureDialog,{draft:{files:[],url:'',destination:'resources'},lib,project:null,source:'Design',close:()=>setDialog(''),complete:async()=>{}}));}
+const pause=ms=>new Promise(r=>setTimeout(r,ms));const assert=(v,m)=>{if(!v)throw Error(m);};
+async function until(fn,m){for(let n=0;n<400;n++){if(fn())return;await pause(20);}throw Error(m);}
+let keyId=0;async function key(name,shift=false){window.__keyAction={id:++keyId,key:name,shift};await until(()=>window.__keyActionDone===keyId,'Key '+name);await pause(25);}
+const checks=[];createRoot(document.getElementById('root')).render(h(React.StrictMode,null,h(Harness)));
+try{
+ await until(()=>document.getElementById('opener'),'Render');
+ for(const id of ['opener','capture-opener']){
+  const opener=document.getElementById(id);opener.focus();await key('Enter');await until(()=>document.querySelector('[role=dialog]'),'Open');const modal=document.querySelector('[role=dialog]');
+  assert(modal.contains(document.activeElement),'Initial focus inside '+id);
+  const focusables=[...modal.querySelectorAll('button,input,textarea,select')].filter(n=>!n.disabled&&n.getClientRects().length&&n.tabIndex>=0);
+  focusables[0].focus();await key('Tab',true);assert(document.activeElement===focusables.at(-1),'Reverse Tab wraps');await key('Tab');assert(document.activeElement===focusables[0],'Forward Tab wraps');
+  const project=[...modal.querySelectorAll('.capture-assign button')].find(b=>b.textContent.trim()==='Project 1');project.focus();await key('Enter');assert(project.getAttribute('aria-pressed')==='true','Enter selects assignment');assert(submissions===0,'Assignment does not submit');
+  focusables.at(-1).focus();const rect=focusables.at(-1).getBoundingClientRect();assert(rect.bottom<=innerHeight&&rect.top>=0,'Footer reachable at '+innerHeight);
+  await key('Escape');await until(()=>!document.querySelector('[role=dialog]'),'Escape closes');await until(()=>document.activeElement===opener,'Returns focus');
+ }
+ checks.push('Capture and video: focus wraps, assignments activate without submitting, footer scrolls into view and Escape returns focus');
+ const removed=document.getElementById('removed-opener');removed.focus();await key('Enter');await until(()=>document.querySelector('[aria-label="Restore Removed reference 0"]'),'Removed rows');
+ document.querySelector('[aria-label="Restore Removed reference 0"]').click();await until(()=>finishRestore,'Restore pending');await key('Escape');assert(document.querySelector('[role=dialog]'),'Busy restore stays open');finishRestore();await until(()=>!document.querySelector('[aria-label="Close removed items"]').disabled,'Restore finished');await key('Escape');await until(()=>document.activeElement===removed,'Restore opener focus');
+ checks.push('Removed items names restore actions and guards Escape during a mutation');
+ const palettes={sidebar:{background:'#123456',text:'#ffffff',icon:'#aabbcc',count:'#ddeeff'},tabs:{background:'#234567',text:'#eeeeee',icon:'#bbccdd',count:'#eeffcc'},buttons:{background:'#345678',text:'#dddddd',icon:'#ccddee',count:'#ffddcc'}};
+ // Use the actual controls, not a direct preference write, to check history and persistence.
+ const nativeSetter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
+ for(const [group,parts] of Object.entries(palettes))for(const [part,value] of Object.entries(parts)){
+  document.querySelector(`[aria-label="Use custom ${group} active ${part} colour"]`).click();await pause(30);
+  const input=document.querySelector(`[aria-label="${group[0].toUpperCase()+group.slice(1)} active ${part} colour"]`);nativeSetter.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));appHistory.endGesture();await pause(30);
+ }
+ const rgb=hex=>'rgb('+hex.slice(1).match(/../g).map(n=>parseInt(n,16)).join(', ')+')';
+ for(const [group,parts] of Object.entries(palettes)){const item=document.getElementById('sample-'+group);assert(getComputedStyle(item).backgroundColor===rgb(parts.background),group+' background');assert(getComputedStyle(item.querySelector('span')).color===rgb(parts.text),group+' text');assert(getComputedStyle(item.querySelector('svg')).color===rgb(parts.icon),group+' icon');assert(getComputedStyle(item.querySelector('small')).color===rgb(parts.count),group+' count');}
+ assert(JSON.stringify(JSON.parse(localStorage.getItem('active-colours')))===JSON.stringify(palettes),'All independent colours persist');
+ document.querySelector('[aria-label="Reset sidebar active icon colour"]').click();await pause(30);assert(!document.documentElement.hasAttribute('data-active-sidebar-icon'),'Reset follows automatic');await appHistory.undo();await pause(30);assert(document.documentElement.hasAttribute('data-active-sidebar-icon'),'Undo restores colour');
+ checks.push('All 12 active colour controls independently style text/icons/counts/background; persistence and reset undo work');
+ document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks,width:innerWidth,height:innerHeight});
+}catch(error){document.getElementById('check-result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack,checks,focus:document.activeElement?.outerHTML?.slice(0,400)});}
+</script></body></html>

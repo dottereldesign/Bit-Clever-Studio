@@ -1,0 +1,22 @@
+.active-colour-controls{min-width:0;margin-block:14px;max-width:460px}
+.active-colour-controls p,.active-colour-controls>small{font-size:12px;line-height:1.5}
+.active-colour-row{display:flex;align-items:center;gap:10px;margin-block:8px;font-size:12px}
+.active-colour-row label{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:1}
+:root .active-colour-row input[type=color]{width:34px;height:28px;padding:2px;flex-shrink:0}
+.active-colour-row button{font-size:11px;text-decoration:underline;padding:5px}
+.active-colour-preview{display:flex;align-items:center;gap:10px;padding:10px;border-radius:4px;margin-block:10px}
+.active-colour-preview small{margin-left:auto}
+:root[data-active-sidebar-background] .app .sidebar :is(.nav-item.source-active,.nav-item.active,.project-folder-row.active,.project-row.active,.project-scope.active):not(.drop-target) {background:var(--active-sidebar-background) !important;}
+:root[data-active-sidebar-text] .app .sidebar :is(.nav-item.source-active,.nav-item.active,.project-folder-row.active,.project-row.active,.project-scope.active):not(.drop-target) {color:var(--active-sidebar-text) !important;}
+:root[data-active-sidebar-icon] .app .sidebar :is(.nav-item.source-active,.nav-item.active,.project-folder-row.active,.project-row.active,.project-scope.active):not(.drop-target) :is(svg,.custom-text-icon) {color:var(--active-sidebar-icon) !important;}
+:root[data-active-sidebar-count] .app .sidebar :is(.nav-item.source-active,.nav-item.active,.project-folder-row.active,.project-row.active,.project-scope.active):not(.drop-target) :is(small,.count,.badge) {color:var(--active-sidebar-count) !important;opacity:1;}
+:root[data-active-tabs-background] .app-tabs.app-tabs > :is(button,span):not(.project-history):is([aria-current=page],[aria-selected=true]) {background:var(--active-tabs-background) !important;}
+:root[data-active-tabs-text] .app-tabs.app-tabs > :is(button,span):not(.project-history):is([aria-current=page],[aria-selected=true]) {color:var(--active-tabs-text) !important;}
+:root[data-active-tabs-icon] .app-tabs.app-tabs > :is(button,span):not(.project-history):is([aria-current=page],[aria-selected=true]) :is(svg,.custom-text-icon) {color:var(--active-tabs-icon) !important;}
+:root[data-active-tabs-count] .app-tabs.app-tabs > :is(button,span):not(.project-history):is([aria-current=page],[aria-selected=true]) :is(small,.count,.badge) {color:var(--active-tabs-count) !important;opacity:1;}
+:root[data-active-buttons-background] :is(.app,.modal,.customise-panel) button:not(:disabled):not(.nav-item):not(.project-scope):not(.app-tabs > button):is([aria-pressed=true],:active) {background:var(--active-buttons-background) !important;}
+:root[data-active-buttons-text] :is(.app,.modal,.customise-panel) button:not(:disabled):not(.nav-item):not(.project-scope):not(.app-tabs > button):is([aria-pressed=true],:active) {color:var(--active-buttons-text) !important;}
+:root[data-active-buttons-icon] :is(.app,.modal,.customise-panel) button:not(:disabled):not(.nav-item):not(.project-scope):not(.app-tabs > button):is([aria-pressed=true],:active) :is(svg,.custom-text-icon) {color:var(--active-buttons-icon) !important;}
+:root[data-active-buttons-count] :is(.app,.modal,.customise-panel) button:not(:disabled):not(.nav-item):not(.project-scope):not(.app-tabs > button):is([aria-pressed=true],:active) :is(small,.count,.badge) {color:var(--active-buttons-count) !important;opacity:1;}
+
+.active-colour-row input[type=checkbox]{width:14px;height:14px;flex-shrink:0}

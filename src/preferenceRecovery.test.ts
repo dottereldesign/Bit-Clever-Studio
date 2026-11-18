@@ -74,3 +74,13 @@ test('failed restore retains the current preferences and reset snapshot for a su
   assert.equal(s.getItem('sidebar-width'),'305');
   assert.deepEqual(persisted,[{'sidebar-width':305}]);
 });
+
+test('active colours retain independent channels and reject malformed imported colours',()=>{
+ const value={sidebar:{background:'#123456',text:'#ffffff',icon:'#aabbcc',count:'#ddeeff',unknown:'#111111'},tabs:{text:'red',icon:'#00ff00'},buttons:{background:'url(secret)',count:'#123'},unexpected:{text:'#ffffff'}};
+ assert.equal(preferenceKeys.includes('active-colours'),true);
+ assert.deepEqual(normalizePreference('active-colours',value),{sidebar:{background:'#123456',text:'#ffffff',icon:'#aabbcc',count:'#ddeeff'},tabs:{icon:'#00ff00'},buttons:{}});
+ assert.equal(normalizePreference('active-colours',[]),undefined);
+ const s=storage({'active-colours':JSON.stringify(value)});repairPreferences(s);
+ assert.deepEqual(JSON.parse(s.getItem('active-colours')!),normalizePreference('active-colours',value));
+ assert.deepEqual(readPreferenceValues(s)['active-colours'],normalizePreference('active-colours',value));
+});

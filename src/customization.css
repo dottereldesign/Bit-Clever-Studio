@@ -79,3 +79,8 @@
 
 :root .customise-layout>nav.app-tabs{flex-wrap:nowrap;overflow-x:auto;background:transparent}
 :root .customise-layout>nav.app-tabs>button{font-size:12px;min-height:34px;padding:8px 10px 10px}
+
+/* Compact windows need a single scrollable settings column. */
+@media(max-width:1000px){.tab-customizer,.cta-customizer{grid-template-columns:minmax(0,1fr)}}
+@media(max-height:700px){.customise-panel{height:75dvh;max-height:75dvh}}
+@media(max-width:1000px){.customise-content[data-tab=sidebar]{grid-template-columns:minmax(0,1fr);overflow:auto}.customise-content[data-tab=sidebar]>.custom-controls,.customise-content[data-tab=sidebar]>.custom-options{overflow:visible}}

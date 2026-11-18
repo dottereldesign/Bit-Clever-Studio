@@ -33,6 +33,17 @@ const checks=[];
 createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode,null,React.createElement(App)));
 try{
  await until(()=>document.querySelector('.home-dashboard'),'Startup');
+ document.querySelector('[title="Customise app"]').click();await until(()=>document.querySelector('.customise-panel'),'Customise opens');await pause(800);
+ for(const group of ['sidebar','tabs','buttons']){
+  document.querySelector(`[data-custom-tab="${group}"]`).click();await pause(50);
+  const controls=document.querySelector('.active-colour-controls');assert(controls,'Active colour controls for '+group);
+  for(const input of controls.querySelectorAll('input')){input.focus();await pause(20);assert(inViewport(input),'Active colour input reachable: '+input.getAttribute('aria-label'));}
+  assert(controls.scrollWidth<=controls.clientWidth+1,'Colour controls do not overflow '+group);
+  assert(inViewport(document.querySelector('[aria-label="Close customisation"]')),'Customise close stays reachable');
+  if(group==='sidebar'){controls.scrollIntoView({block:'nearest'});window.__screenshotReady=true;await pause(400);}
+ }
+ await key('Escape');await until(()=>!document.querySelector('.customise-panel'),'Customise closes');
+ checks.push('Sidebar, tabs and buttons active colour controls fit and remain keyboard reachable at the minimum size');
  const green=document.querySelector('[aria-label="Green variations"]');green.focus();await key('Enter');
  await until(()=>document.querySelector('.sidebar-green-panel input:checked')===document.activeElement,'Picker initial focus');
  for(const sample of document.querySelectorAll('.sidebar-green-sample'))assert(contrast(hex(getComputedStyle(sample).color),hex(getComputedStyle(sample).backgroundColor))>=4.5,'Green sample contrast');

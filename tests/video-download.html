@@ -34,7 +34,7 @@ try{
  await until(()=>document.querySelectorAll('.download-queue-item.queued').length===3,'waiting batch');assert(started.length===1,'More than one download started');
  assert(document.activeElement===document.querySelector('[aria-label="Queue video links"]')&&document.activeElement.value==='','Quick entry should stay focused and clear');
  await quick('https://www.facebook.com/watch/?v=1459999332693030&ref=other');assert(document.querySelectorAll('.download-queue-item').length===4,'Active duplicate added');
- const stored=JSON.parse(localStorage.getItem('video-download-queue-v1'));assert(stored.filter(job=>job.status==='queued').length===3&&stored.find(job=>job.status==='active').projects[0]===7,'Queue persistence');
+ const stored=JSON.parse(localStorage.getItem('video-download-queue-v2:'+localStorage.getItem('active-library-root')));assert(stored.filter(job=>job.status==='queued').length===3&&stored.find(job=>job.status==='active').projects[0]===7,'Queue persistence');
  row('https://example.com/four').querySelector('[aria-label="Remove queued video"]').click();await until(()=>row('https://example.com/four').classList.contains('cancelled'),'remove waiting');assert(!calls.some(call=>call.command==='cancel_video_download'),'Removing waiting item cancelled active');
  await quick('https://example.com/good\nnot a URL');assert(document.querySelector('.download-queue .form-error'),'Invalid batch was accepted');assert(document.querySelectorAll('.download-queue-item').length===4,'Invalid batch partly queued');
  checks.push('Batch paste waits in FIFO order, active duplicates are skipped, waiting items can be removed, and invalid batches add nothing');

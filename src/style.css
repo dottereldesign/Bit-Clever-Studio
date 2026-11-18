@@ -1946,3 +1946,9 @@ textarea:focus-visible,[tabindex]:focus-visible { outline:2px solid var(--app-ac
 .sidebar-green-picker[hidden] { display:none; }
 
 .duplicates-modal button,.colour-panel button { color:inherit; }
+
+/* Keep long capture/restore content reachable at the minimum desktop size. */
+.modal.capture-modal,.modal.removed-modal{max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);overflow-y:auto;overscroll-behavior:contain}
+.capture-assign button,.removed-item strong{overflow-wrap:anywhere}
+.removed-item button{flex-shrink:0}
+.modal:focus-visible{outline:2px solid var(--app-ink,#35512a);outline-offset:2px}
