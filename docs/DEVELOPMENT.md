@@ -166,3 +166,11 @@ The Links table includes a Category column, also shown for ordinary links within
 ### Refresh consistency regression
 
 `node scripts/check-grid-return.mjs refresh-consistency` runs the actual App with delayed synthetic library responses at wide and narrow sizes. It verifies event coalescing, visible project state, and exactly-once native history recording. It is included in `test:browser:smoke`. `npm test` also covers coordinator burst/error/retry behaviour. The native `snapshot_tests` test commits a synthetic writer after item loading and verifies that relationships, counts and history remain on the same read snapshot; the next load sees the committed change. No real library is used.
+
+### Preference recovery
+
+Saved preference values are validated before rendering and when restoring backups or replaying preference history. Malformed fields fall back safely; valid compatible fields are retained. Original malformed values remain in local WebView storage, scoped by active library root, and can be downloaded from Settings → General → Preference recovery.
+
+Reset preferences saves a local copy of the current appearance, layout and shortcut preferences, persists the reset to the active library, then reloads. Restore previous preferences validates that saved copy, persists it and reloads. A failed native save rolls local preferences back and leaves the recovery controls usable. Projects, files, unfinished drafts and download queues are not reset. These local recovery copies are not included in library exports and do not survive clearing WebView storage.
+
+`node scripts/check-grid-return.mjs preference-recovery` tests malformed saved values, failed-save rollback, and successful reset/restore across actual reloads in an isolated browser. It is included in the CI smoke suite. `npm test` covers the schema, storage recovery, library scoping and history replay without accessing the real library. Add new backed-up preference keys and their shape validation together in `preferenceSchema.ts`.
