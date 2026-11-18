@@ -35,12 +35,9 @@ pub(crate) fn hash_file(path: &Path) -> Result<String> {
 }
 pub fn fingerprint(path: &Path) -> Result<Fingerprint> {
     let before = fs::metadata(path).map_err(err)?;
-    let modified = before
+    let modified = crate::timestamps::unix_millis_or_zero(before
         .modified()
-        .map_err(err)?
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
+        .map_err(err)?);
     let file = hash_file(path)?;
     let pixels = if library::kind(path) == Some("image") {
         image::ImageReader::open(path)
@@ -149,8 +146,7 @@ pub fn index_with_progress(
         let time = meta
             .modified()
             .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|t| t.as_millis() as i64);
+            .and_then(crate::timestamps::unix_millis);
         if size == Some(meta.len() as i64) && modified == time {
             continue;
         }
@@ -559,13 +555,10 @@ pub fn capture_with_progress(db_path: &Path, c: Capture, progress:&mut impl FnMu
         }
         fs::rename(&temporary, &target).map_err(err)?;
         let target = target.canonicalize().map_err(err)?;
-        let modified = fs::metadata(&target)
+        let modified = crate::timestamps::unix_millis_or_zero(fs::metadata(&target)
             .map_err(err)?
             .modified()
-            .map_err(err)?
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as i64;
+            .map_err(err)?);
         let name = if c.files.len() == 1 && !c.name.trim().is_empty() {
             c.name.trim().to_owned()
         } else {

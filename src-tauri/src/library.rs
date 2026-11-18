@@ -58,12 +58,9 @@ fn scan_named(db_path: &Path, root: &Path, prefix: &str) -> Result<usize> {
         let path = entry.path();
         let Some(kind) = kind(path) else { continue };
         let metadata = entry.metadata().map_err(err)?;
-        let modified = metadata
+        let modified = crate::timestamps::unix_millis_or_zero(metadata
             .modified()
-            .unwrap_or(std::time::UNIX_EPOCH)
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as i64;
+            .unwrap_or(std::time::UNIX_EPOCH));
         let relative = path.strip_prefix(&root).map_err(err)?;
         let relative_source = relative
             .parent()

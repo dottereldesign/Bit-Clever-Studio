@@ -413,12 +413,8 @@ mod snapshot_tests {
     }
 }
 
-pub fn now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
-}
+pub use crate::timestamps::now;
+
 pub fn default_category(source: &str) -> String {
     if source == "Photography" || source.starts_with("Photography/") {
         return "Photography".to_owned();
@@ -939,11 +935,12 @@ pub fn import(path: &Path, source: PathBuf) -> Result<()> {
             }
         }
     }
-    for mut overview in backup.library.project_overviews {overview.project_id=*projects.get(&overview.project_id).ok_or("Missing overview project in backup")?;if let Some(nodes)=&mut overview.moodboard{for node in nodes{node.item_id=node.item_id.and_then(|id|item_map.get(&id).copied());}}else{overview.moodboard=crate::project_overview::load(&tx)?.into_iter().find(|o|o.project_id==overview.project_id).and_then(|o|o.moodboard);}crate::project_overview::save(&tx,&overview)?;}
+    let refs=crate::import_references::ImportReferences::new(&projects,&item_map);
+    for mut overview in backup.library.project_overviews {overview.project_id=refs.required_project(overview.project_id,"Missing overview project in backup")?;if let Some(nodes)=&mut overview.moodboard{for node in nodes{node.item_id=refs.item(node.item_id);}}else{overview.moodboard=crate::project_overview::load(&tx)?.into_iter().find(|o|o.project_id==overview.project_id).and_then(|o|o.moodboard);}crate::project_overview::save(&tx,&overview)?;}
     crate::studio::import(&tx,backup.library.studio,&projects,&item_map)?;
     crate::clients::import(&tx,backup.client_events,&projects,&item_map)?;
-    for mut c in backup.library.client_records.contacts {c.project_id=*projects.get(&c.project_id).ok_or("Missing contact project")?;crate::client_records::save_contact(&tx,&c)?;}
-    for mut r in backup.library.client_records.records {r.project_id=*projects.get(&r.project_id).ok_or("Missing record project")?;r.files=r.files.iter().filter_map(|id|item_map.get(id).copied()).collect();crate::client_records::save_record(&tx,&r)?;}
+    for mut c in backup.library.client_records.contacts {c.project_id=refs.required_project(c.project_id,"Missing contact project")?;crate::client_records::save_contact(&tx,&c)?;}
+    for mut r in backup.library.client_records.records {r.project_id=refs.required_project(r.project_id,"Missing record project")?;r.files=refs.items(&r.files);crate::client_records::save_record(&tx,&r)?;}
     tx.execute("DELETE FROM organisation_history",[]).map_err(err)?;
     tx.execute("DELETE FROM organisation_redo",[]).map_err(err)?;
     crate::clients::end(&tx)?;

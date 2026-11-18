@@ -65,12 +65,10 @@ pub fn events(db:&Connection,client:Option<&str>,before:Option<i64>,limit:i64)->
  rows.map(|r|{let(id,key,clients,entity,record,project,title,before,after,action,at,batch)=r.map_err(err)?;Ok(Event{id,key,clients:serde_json::from_str(&clients).map_err(err)?,entity,record,project,title,before:before.map(|s|serde_json::from_str(&s).map_err(err)).transpose()?,after:after.map(|s|serde_json::from_str(&s).map_err(err)).transpose()?,action,batch,at})}).collect()
 }
 pub fn import(db:&Connection,events:Vec<Event>,projects:&std::collections::HashMap<i64,i64>,items:&std::collections::HashMap<i64,i64>)->Result<()> {
+ let refs=crate::import_references::ImportReferences::new(projects,items);
  for mut e in events {
-  for value in [&mut e.before,&mut e.after].into_iter().flatten(){
-   for (key,map) in [("files",items),("projects",projects)] {if let Some(ids)=value.get_mut(key).and_then(serde_json::Value::as_array_mut){for id in ids {if let Some(old)=id.as_i64(){*id=map.get(&old).map(|v|serde_json::json!(v)).unwrap_or(serde_json::json!("Unavailable historical reference"));}}}}
-   if let Some(id)=value.get("project_id").and_then(serde_json::Value::as_i64){value["project_id"]=projects.get(&id).map(|v|serde_json::json!(v)).unwrap_or(serde_json::Value::Null);}
-  }
-  db.execute("INSERT OR IGNORE INTO client_events(event_key,clients,entity,record,project,title,before_data,after_data,action,batch,at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",params![e.key,serde_json::to_string(&e.clients).map_err(err)?,e.entity,e.record,e.project.and_then(|p|projects.get(&p).copied()),e.title,e.before.map(|v|v.to_string()),e.after.map(|v|v.to_string()),e.action,e.batch,e.at]).map_err(err)?;}Ok(())
+  for value in [&mut e.before,&mut e.after].into_iter().flatten(){refs.activity(value);}
+  db.execute("INSERT OR IGNORE INTO client_events(event_key,clients,entity,record,project,title,before_data,after_data,action,batch,at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",params![e.key,serde_json::to_string(&e.clients).map_err(err)?,e.entity,e.record,refs.project(e.project),e.title,e.before.map(|v|v.to_string()),e.after.map(|v|v.to_string()),e.action,e.batch,e.at]).map_err(err)?;}Ok(())
 }
 
 #[cfg(test)]mod tests{

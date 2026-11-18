@@ -630,21 +630,12 @@ pub fn import(
     projects: &HashMap<i64, i64>,
     items: &HashMap<i64, i64>,
 ) -> Result<()> {
+    let refs = crate::import_references::ImportReferences::new(projects, items);
     for mut e in entries {
-        e.handover_project=e.handover_project.and_then(|id|projects.get(&id).copied());
-        e.projects = e
-            .projects
-            .iter()
-            .filter_map(|id| projects.get(id).copied())
-            .collect();
-        e.files = e
-            .files
-            .iter()
-            .filter_map(|id| items.get(id).copied())
-            .collect();
-        for n in &mut e.moodboard {
-            n.item_id = n.item_id.and_then(|id| items.get(&id).copied());
-        }
+        e.handover_project = refs.project(e.handover_project);
+        e.projects = refs.projects(&e.projects);
+        e.files = refs.items(&e.files);
+        for n in &mut e.moodboard { n.item_id = refs.item(n.item_id); }
         put(db, &e)?;
     }
     Ok(())

@@ -8,6 +8,8 @@ mod clipboard;
 mod content;
 mod file_moves;
 mod db;
+mod import_references;
+mod timestamps;
 mod download;
 mod library;
 mod resources;

@@ -1,3 +1,4 @@
+import {createNativeHistoryTracker} from './nativeHistory';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createRefreshCoordinator} from './refreshCoordinator';
@@ -55,4 +56,26 @@ test('a refresh triggered while applying is not lost', async () => {
   let count=0;const applied:number[]=[];
   const refresh=createRefreshCoordinator(async()=>++count,value=>{applied.push(value);if(value===1)void refresh();});
   assert.equal(await refresh(),2);assert.deepEqual(applied,[1,2]);
+});
+
+test('native history baselines libraries and preserves ordered new entries across undo/redo',()=>{
+ const observe=createNativeHistoryTracker();
+ const entry=(id:number)=>({id,label:`Change ${id}`});
+ assert.deepEqual(observe({root:'A',undo_entries:[entry(1)]}),[]);
+ assert.deepEqual(observe({root:'A',undo_entries:[entry(1),entry(2),entry(2),entry(3)]}),[entry(2),entry(3)]);
+ assert.deepEqual(observe({root:'A',undo_entries:[entry(1),entry(2)]}),[]);
+ assert.deepEqual(observe({root:'A',undo_entries:[entry(1),entry(2),entry(3)]}),[entry(3)]);
+ assert.deepEqual(observe({root:'B',undo_entries:[entry(1),entry(9)]}),[]);
+ assert.deepEqual(observe({root:'B',undo_entries:[entry(1),entry(9),entry(10)]}),[entry(10)]);
+});
+test('obsolete native history cannot advance the accepted history baseline',async()=>{
+ const observe=createNativeHistoryTracker(),stale=deferred<{root:string;undo_entries:{id:number;label:string}[]}>();
+ const applied:number[]=[];let reads=0;
+ observe({root:'A',undo_entries:[]});
+ const fresh={root:'A',undo_entries:[{id:2,label:'Saved'}]};
+ const refresh=createRefreshCoordinator(()=>++reads===1?stale.promise:Promise.resolve(fresh),snapshot=>{applied.push(...observe(snapshot).map(e=>e.id));});
+ const first=refresh();await tick();const second=refresh();
+ stale.resolve({root:'A',undo_entries:[{id:1,label:'Obsolete'}]});
+ await Promise.all([first,second]);assert.deepEqual(applied,[2]);
+ assert.deepEqual(observe(fresh),[]);
 });

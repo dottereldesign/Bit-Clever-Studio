@@ -405,13 +405,10 @@ pub fn import(
     let temporary = destination.with_extension("pending");
     fs::copy(file, &temporary).map_err(err)?;
     fs::rename(&temporary, &destination).map_err(err)?;
-    let modified = fs::metadata(&destination)
+    let modified = crate::timestamps::unix_millis_or_zero(fs::metadata(&destination)
         .map_err(err)?
         .modified()
-        .map_err(err)?
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
+        .map_err(err)?);
     let mut db = db::connect(db_path)?;
     let tx = db.transaction().map_err(err)?;
     tx.execute("INSERT INTO items(path,name,kind,source,modified,added,source_url) VALUES(?,?,'video','Videos/Downloads',?,?,?) ON CONFLICT(path) DO UPDATE SET name=excluded.name,source_url=excluded.source_url,archived=0,missing=0",params![destination.to_string_lossy(),title,modified,db::now(),request.url]).map_err(err)?;

@@ -66,12 +66,23 @@ Customise → Sidebar, Tabs and Buttons each offer independent active background
 
 The new isolated browser fixture exercises real keyboard events, long capture lists, busy restore, all twelve colour channels, saved values and reset/undo at 1440×940 and 850×580. The existing full-app accessibility fixture also checks all three Customise sections for reachable controls and horizontal overflow. Both fixtures run in browser smoke CI. Validation: 116 frontend tests, TypeScript, version consistency, diagnostics guard, both accessibility fixtures at both sizes, and video queue workflows at 1440×940 and 960×700 passed. The video fixture was updated to read the current library-scoped queue key. Isolated Customise screenshots were reviewed, and the user confirmed the colours, keyboard interactions and small-window controls in Design Dev. Manual screen-reader acceptance and exhaustive coverage of other surfaces remain follow-up work.
 
+## Targeted reliability cleanup — 18 November 2026
+
+Backup import now shares `ImportReferences` across project moodboards, Studio entries, client records/contacts and activity. Required owners still reject an invalid import; missing optional live references are omitted; historical references keep the existing unavailable marker. Source IDs never fall back to same-numbered destination IDs. Existing import transactions and backup formats are unchanged.
+
+Persisted library timestamps now share Unix-millisecond conversion across database clocks, scanning, capture, downloads, fingerprints and file details. Callers retain their existing error, unknown-time and pre-epoch policies. Conversion saturates instead of wrapping if an unrepresentably large time is supplied. Duration measurements and opaque generation identifiers remain separate.
+
+Native history discovery is extracted from App into a small tracker fed only accepted refresh snapshots. It preserves native ordering, ignores repeated IDs in one snapshot, and baselines each library before recording newly observed edits. Undo/Redo execution and transaction/snapshot formats are unchanged. Tests cover stale reads, library changes, ordered history, millisecond precision and missing/colliding import references; existing recovery contracts exercise the shared code end to end.
+
+Validation: 118 frontend tests, 117 native tests (seven opt-in/worker tests ignored), the fresh native-to-frontend recovery contract, TypeScript, version consistency, diagnostics guard, and mixed-history/refresh-consistency browser checks at both viewport sizes passed. The user confirmed the expected library, rating Undo/Redo/Undo and file dates in Design Dev.
+
+Further snapshot-cost optimisation belongs to the measured performance work below; no broad rewrite is required for this cleanup batch.
+
 ## Still outstanding
 
 1. **Dependency monitoring.** Recheck Picomatch for a published fix, keep the pinned Node 22 patch current, and review the non-Windows Rust notices before adding targets. The SQLite/Vite/Node maintenance changes are described above.
 2. **Broader accessibility acceptance.** The Duplicates/portalled-picker and capture/video/removed-dialog focus gaps, active colour controls and their minimum-window checks are addressed above. A manual NVDA/Narrator pass and exhaustive contrast, keyboard and minimum-window checks of the remaining app surfaces are still outstanding.
 3. **Real-workload performance acceptance.** The repeatable 4,000/20,000-item synthetic browser/native profiling batch is complete; see [measurements and limitations](PERFORMANCE.md#18-november-2026-profiling-batch). Mounting stays bounded, while render work and JSON encoding warrant follow-up. Cold-disk startup, real media decoding/cache misses, worker/lock contention, native cancellation and end-to-end desktop traces remain unmeasured. No runtime optimisation or production performance guarantee is claimed.
 4. **Remaining recovery acceptance.** Combined recovery/import contracts and interrupted duplicate moves are covered above. Remaining work includes broader command/schema coverage; interruption during other import, download, managed-filing and library-creation workflows; real power-loss/filesystem durability and removable-drive tests; and orphan files from older builds without move journals. Simulated unavailable folders and failed pointer replacements are covered, not physical drive removal.
-5. **Maintainability.** Centralise reference remapping and timestamp/change contracts, extend the extracted refresh coordinator to history responsibilities where useful, and reduce broad snapshot work where profiling or correctness evidence justifies it. These are targeted follow-ups, not a framework rewrite.
 
 Standalone builds, installers, version bumps, tags and releases were explicitly excluded from these batches. A pushed development branch is a source backup; it does not update the standalone executable or imply integration into main.

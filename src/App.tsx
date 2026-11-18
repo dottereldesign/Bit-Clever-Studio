@@ -1,3 +1,4 @@
+import {createNativeHistoryTracker} from './nativeHistory';
 import BackupCoverage from "./BackupCoverage";
 import {createRefreshCoordinator} from "./refreshCoordinator";
 import {useAppTheme} from './AppTheme';
@@ -361,7 +362,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
   const historyActions=useHistory();
   const undoing=historyActions.busy;
   const libRef=useRef(lib);libRef.current=lib;
-  const historyReady=useRef(false);
+  const [observeNativeHistory]=useState(createNativeHistoryTracker);
   const pasteBusy=useRef(false);
   const stopHoverRef=useRef<()=>void>(()=>{});
   const setHoverId=useCallback((_id:null)=>stopHoverRef.current(),[]);
@@ -406,15 +407,11 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
   const [refresh] = useState<() => Promise<Library>>(() => createRefreshCoordinator(loadLibrary, next => {
     // Observe native history itself, including imports/downloads completed by
     // other dialogs, rather than trying to enumerate every possible save path.
-    if(historyReady.current&&next.undo_entries){
-      const known=new Set(libRef.current.undo_entries?.map(e=>e.id));
-      for(const entry of next.undo_entries){if(!known.has(entry.id))appHistory.record({
-        label:entry.label,kind:'library',
-        undo:async()=>{await changeLibrary({action:'undo_organisation',value:entry.label});await refresh();},
-        redo:async()=>{await changeLibrary({action:'redo_organisation'});await refresh();},
-      });}
-    }
-    historyReady.current=true;
+    for(const entry of observeNativeHistory(next))appHistory.record({
+      label:entry.label,kind:'library',
+      undo:async()=>{await changeLibrary({action:'undo_organisation',value:entry.label});await refresh();},
+      redo:async()=>{await changeLibrary({action:'redo_organisation'});await refresh();},
+    });
     libRef.current=next;setLib(next);
     setError(previous=>next.maintenance_warning??(previous.startsWith("Saved your changes, but library files")?"":previous));
     setReady(true);
