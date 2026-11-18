@@ -426,8 +426,14 @@ fn capture_inner(db_path: &Path, c: Capture, progress:&mut impl FnMut(DuplicateP
             let directory = db_path.parent().ok_or("Missing data folder")?.join("link-thumbnails");
             fs::create_dir_all(&directory).map_err(err)?;
             let path = directory.join(format!("{}.png", nonce()));
+            let temporary=tempfile::NamedTempFile::new_in(&directory).map_err(err)?;
+            if destination=="websites"{image.save_with_format(temporary.path(),image::ImageFormat::Png).map_err(err)?;}else{image.thumbnail(image.width().min(1600), image.height().min(1600)).save_with_format(temporary.path(),image::ImageFormat::Png).map_err(err)?;}
+            temporary.as_file().sync_all().map_err(err)?;
+            crate::import_copies::record(&db,&path,temporary.path(),&hash_file(temporary.path())?)?;
+            crate::file_moves::checkpoint("thumbnail.after_intent");
+            temporary.persist_noclobber(&path).map_err(err)?;
+            crate::file_moves::checkpoint("thumbnail.after_publish");
             thumbnail.0 = Some(path.clone());
-            if destination=="websites"{image.save(&path).map_err(err)?;}else{image.thumbnail(image.width().min(1600), image.height().min(1600)).save(&path).map_err(err)?;}
         }
         let mut stmt = db
             .prepare("SELECT id,path FROM items WHERE kind='link'")
@@ -507,8 +513,12 @@ fn capture_inner(db_path: &Path, c: Capture, progress:&mut impl FnMut(DuplicateP
             let label=result.move_label.clone().unwrap_or_else(||if existing.is_some(){"Update saved link"}else{"Create link"}.to_owned());
             crate::history::record(&tx,&label,patches)?;result.history_labels.push(label);
         }
-        crate::clients::end(&tx)?;tx.commit().map_err(err)?;
+        crate::clients::end(&tx)?;
+        crate::file_moves::checkpoint("thumbnail.before_commit");
+        crate::import_copies::finish(&tx)?;
+        tx.commit().map_err(err)?;
         thumbnail.0.take();
+        crate::file_moves::checkpoint("thumbnail.after_commit");
         result.ids.push(id);
         return Ok(result);
     }

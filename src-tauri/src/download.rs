@@ -175,7 +175,9 @@ pub fn existing(path: &Path, request: &Request) -> Result<Option<Saved>> {
     }
     Ok(None)
 }
+#[cfg(test)]
 struct Temporary(PathBuf);
+#[cfg(test)]
 impl Drop for Temporary {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
@@ -245,19 +247,7 @@ pub fn run_locked(
         return Err("yt-dlp is missing. Reinstall the updated Design app.".into());
     }
 
-    let staging = db_path
-        .parent()
-        .ok_or("Missing data folder")?
-        .join("video-downloads");
-    fs::create_dir_all(&staging).map_err(err)?;
-    let staging = staging.canonicalize().map_err(err)?;
-    let job = staging.join(content::nonce().to_string());
-    fs::create_dir(&job).map_err(err)?;
-    let job = job.canonicalize().map_err(err)?;
-    if !job.starts_with(&staging) {
-        return Err("Download staging must stay inside the app data folder.".into());
-    }
-    let job = Temporary(job);
+    let job = crate::download_staging::Staging::create(db_path)?;
     notify(Progress::phase("connecting"));
     if cancelled.load(Ordering::SeqCst){return Err("Download cancelled.".into());}
     let mut command = Command::new(downloader);
@@ -294,15 +284,13 @@ pub fn run_locked(
         ])
         .arg(ffmpeg)
         .arg("-P")
-        .arg(&job.0)
+        .arg(&job.path)
         .args(["-o", "%(id)s.%(ext)s", "--"])
         .arg(&request.url)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("Could not start yt-dlp: {e}"))?;
+    let (tree,mut child)=crate::download_process::Tree::spawn(&command)?;
     let (tx, rx) = mpsc::channel();
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
@@ -332,6 +320,7 @@ pub fn run_locked(
     let mut last_error = String::new();
     let status = loop {
         if cancelled.load(Ordering::SeqCst) || started.elapsed() > Duration::from_secs(60 * 60) {
+            tree.terminate();
             stop(&mut child);
             let _ = out.join();
             let _ = errors.join();
@@ -349,6 +338,7 @@ pub fn run_locked(
             break status;
         }
     };
+    tree.terminate(); // Stray descendants must not keep stdout/stderr pipes open.
     let _ = out.join();
     let _ = errors.join();
     for line in rx.try_iter() {
@@ -364,7 +354,7 @@ pub fn run_locked(
     let file = PathBuf::from(filepath.ok_or("yt-dlp did not return a video file.")?)
         .canonicalize()
         .map_err(err)?;
-    if !file.starts_with(&job.0)
+    if !file.starts_with(&job.path)
         || library::kind(&file) != Some("video")
         || fs::metadata(&file).map_err(err)?.len() == 0
     {

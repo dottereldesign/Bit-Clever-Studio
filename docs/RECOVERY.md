@@ -30,7 +30,17 @@ Cancellation is scoped to a unique attempt token, including retries, so a delaye
 
 After restart, an interrupted active job becomes an error with a Retry explanation instead of automatically starting network work. This also applies when cancellation was pending: the app cannot assume an unacknowledged cancellation succeeded. Explicit Retry checks for an already-saved video first. Waiting queued jobs retain their existing FIFO behaviour and library isolation.
 
-Tests cover publication/commit process exits, safe retries and assignments, cancellation at save boundaries, late-token isolation, and stopping an isolated running child with partial staging cleanup. They do not use public video services. Abrupt termination of the entire app/downloader process tree during network transfer, orphaned staging cleanup after such termination, real-service authentication/retries, and power loss remain separate acceptance work.
+On Windows, a supervisor joins a kill-on-close Job Object before starting the downloader. The app owns the job handle; abrupt app termination kills the supervisor, downloader and transcoder descendants. Cancellation and normal completion also terminate remaining descendants before joining output readers. No shell interprets download arguments. Other operating systems retain the existing process behaviour; whole-tree crash cleanup is Windows-specific.
+
+New network staging folders have an ownership marker and an exclusive lifetime lock. Startup and the next download remove abandoned, recognised staging; live locked folders, unmarked legacy folders, unknown markers and linked/reparse-point contents are preserved. A crash before the ownership marker is written can still leave an unidentified folder. Cleanup errors are diagnosed at startup and retried before a new download.
+
+Tests forcibly kill an isolated app-owner process while fake downloader/transcoder workers hold exclusive files. They verify both descendants terminate, abandoned staging is removed, and live/unknown staging is preserved. Save-boundary exits, retries, cancellation and attempt isolation are also covered. No public video service or real library is used; service authentication, network reliability and physical power loss are not established by these tests.
+
+## Library creation and generated thumbnails
+
+Library creation holds an exclusive setup lock and builds its database in a marked private workspace. A retry verifies the source backup and rebuilds recognised unpublished setup, including a torn temporary database. Unknown setup files and legacy `Creating.sqlite` files are preserved for review. Publication follows an integrity check, completed WAL checkpoint and database flush, and cannot overwrite an existing database. A durable pending flag resumes file organisation after publication. The active-library pointer changes only after the new library passes verification. A corrupt published database is preserved and rejected, never silently replaced.
+
+Generated website/link thumbnails are flushed and journalled before publication. Metadata commit clears the intent atomically. Recovery removes only unchanged unreferenced provisional files; source images and old thumbnails needed by Undo/Redo remain intact. Tests interrupt generation and replacement before/after publication and commit, and check history round trips.
 
 ## If recovery needs attention
 
@@ -42,10 +52,13 @@ Full export and managed-file maintenance stop if pending reconciliation cannot s
 
 ```powershell
 npm run test:native -- interruption_tests
+npm run test:native -- full_recovery_tests
 ```
 
 The normal tests create temporary libraries and launch isolated child **test processes**, ending those children with exit code 86 at checkpoints without unwinding. They never launch, attach to or terminate Design Dev, and never use the user's library. The ignored `crash_worker` is invoked only by these parent tests; it is not a standalone manual test. Crash/copy-injection environment hooks are compiled only into test binaries.
 
 Coverage additionally includes managed-filing and metadata/capture-file exits before and after publication/commit, provisional thumbnail copies, failed metadata saves, conflict preservation, library relocation and safe retries. Coverage includes exits after intent persistence, destination publication, source removal and metadata commit; hard-link and forced-copy paths; deferred SQLite commit failures; idempotent partial-batch retries; moved libraries; conflicting files; and a simulated unavailable recovery directory. A Windows file-sharing lock tests failure of atomic active-library pointer replacement, followed by retry. Renaming a fixture folder simulates drive unavailability and reconnection. Native-to-frontend contracts and browser tests also check ordinary export/recovery and the recovery warning's appearance/clearance.
 
-These tests establish selected process-exit and failure behaviour, not hardware power-loss durability. They do not emulate controller caches, filesystem damage, real removable-drive disconnection, every capture variant (including generated link/website thumbnails), download interruption, or crashes during all library-creation stages. Recovery of orphan files created by older builds without a journal is also outside this change. Keep verified backups; this journal is not a backup.
+Database connections explicitly use WAL with `synchronous=FULL`. Tests assert this setting, force SQLite capacity exhaustion, terminate workers before/after WAL commit, simulate unavailable library folders and preserve a corrupt published database. These establish selected process-exit and failure behaviour, not hardware durability. SQLite still depends on correct filesystem and device flush behaviour: see [SQLite synchronous](https://sqlite.org/pragma.html#pragma_synchronous) and [hardware/OS corruption limits](https://www.sqlite.org/howtocorrupt.html). Process-tree guarantees follow [Windows Job Object semantics](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects).
+
+Actual physical drive removal, power loss, controller caches and filesystem damage remain unqualified. See the [hardware qualification procedure](HARDWARE-RECOVERY.md). Unidentified pre-journal files and older-build orphans are preserved for review. Keep verified backups; recovery journals are not backups.

@@ -91,7 +91,7 @@ pub struct Library {
 pub fn connect(path: &Path) -> Result<Connection> {
     let db = Connection::open(path).map_err(err)?;
     db.busy_timeout(Duration::from_secs(15)).map_err(err)?;
-    db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;")
+    db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")
         .map_err(err)?;
     Ok(db)
 }

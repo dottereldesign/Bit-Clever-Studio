@@ -23,26 +23,45 @@ fn configure(db:&rusqlite::Connection,folder:&Path)->Result<()>{
 pub fn open(folder:&Path)->Result<PathBuf>{
     let folder=folder.canonicalize().map_err(err)?;
     let path=folder.join("Library Data/Library.sqlite");
-    if path.is_file(){rebase(&path,&folder)?;crate::file_moves::init(&db::connect(&path)?)?;crate::file_moves::reconcile(&path)?;return Ok(path);}
-    let report=library_export::verify(&folder)?;
-    if !report.missing.is_empty(){return Err(format!("This backup has {} unavailable files. Repair the source library before using it as a complete library.",report.missing.len()));}
-    let temporary=folder.join("Library Data/Creating.sqlite");
-    if temporary.exists(){return Err("An unfinished library setup exists. Keep this folder and create a fresh backup.".into());}
-    fs::create_dir_all(temporary.parent().unwrap()).map_err(err)?;
-    db::init(&temporary)?;
-    db::import(&temporary,library_export::metadata_path(&folder))?;
-    let preferences=library_export::restore_preferences(&folder,&temporary)?;
-    let conn=db::connect(&temporary)?;configure(&conn,&folder)?;
+    if !path.is_file(){
+        let report=library_export::verify(&folder)?;
+        if !report.missing.is_empty(){return Err(format!("This backup has {} unavailable files. Repair the source library before using it as a complete library.",report.missing.len()));}
+    }
+    fs::create_dir_all(folder.join("Library Data")).map_err(err)?;
+    let _lock=crate::library_creation::lock(&folder)?;
+    if path.is_file(){
+        let conn=db::connect(&path)?;let check:String=conn.query_row("PRAGMA quick_check",[],|r|r.get(0)).map_err(err)?;
+        if check!="ok"{return Err("The library database failed its integrity check.".into());}drop(conn);
+        rebase(&path,&folder)?;crate::file_moves::init(&db::connect(&path)?)?;crate::file_moves::reconcile(&path)?;
+        // Also finish maintenance after a crash immediately following publication.
+        if db::setting(&db::connect(&path)?,"creation_pending").as_deref()==Some("1"){organise(&path)?;db::set_setting(&db::connect(&path)?,"creation_pending","0")?;}crate::library_creation::cleanup(&folder)?;return Ok(path);
+    }
+    if folder.join("Library Data/Creating.sqlite").exists(){return Err("An older unfinished library setup exists. Keep this folder and create a fresh backup.".into());}
+    let temporary=crate::library_creation::prepare(&folder)?;
+    db::init(&temporary)?;crate::file_moves::checkpoint("creation.after_schema");
+    db::import(&temporary,library_export::metadata_path(&folder))?;crate::file_moves::checkpoint("creation.after_import");
+    let preferences=library_export::restore_preferences_to(&folder,&temporary,&folder.join("Library Data"))?;
+    let conn=db::connect(&temporary)?;configure(&conn,&folder)?;db::set_setting(&conn,"creation_pending","1")?;
     db::set_setting(&conn,"appearance_preferences",&serde_json::to_string(&preferences).map_err(err)?)?;
-    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);").map_err(err)?;drop(conn);
-    fs::rename(&temporary,&path).map_err(err)?;
-    organise(&path)?;Ok(path)
+    let check:String=conn.query_row("PRAGMA quick_check",[],|r|r.get(0)).map_err(err)?;
+    if check!="ok"{return Err("The new library database failed its integrity check.".into());}
+    let (busy,_,_):(i64,i64,i64)=conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(err)?;
+    if busy!=0{return Err("Library setup is busy. Close the other connection and retry.".into());}drop(conn);
+    fs::OpenOptions::new().read(true).write(true).open(&temporary).map_err(err)?.sync_all().map_err(err)?;
+    crate::file_moves::checkpoint("creation.before_publish");
+    // No-overwrite publication on the same volume, including drives without hard links.
+    tempfile::TempPath::try_from_path(temporary.clone()).map_err(err)?.persist_noclobber(&path).map_err(err)?;
+    crate::file_moves::checkpoint("creation.after_publish");
+    crate::library_creation::cleanup(&folder)?;
+    organise(&path)?;db::set_setting(&db::connect(&path)?,"creation_pending","0")?;crate::file_moves::checkpoint("creation.after_organise");Ok(path)
 }
 pub fn activate(config:&Path,folder:&Path)->Result<()> {
     let path=open(folder)?;verify_live(folder)?;let conn=db::connect(&path)?;
     let check:String=conn.query_row("PRAGMA quick_check",[],|r|r.get(0)).map_err(err)?;
     if check!="ok"{return Err("The library database failed its integrity check.".into());}
-    atomic_write(&config.join("active-library.json"),&serde_json::to_vec(&folder.canonicalize().map_err(err)?).map_err(err)?)
+    crate::file_moves::checkpoint("creation.before_activate");
+    atomic_write(&config.join("active-library.json"),&serde_json::to_vec(&folder.canonicalize().map_err(err)?).map_err(err)?)?;
+    crate::file_moves::checkpoint("creation.after_activate");Ok(())
 }
 fn rewrite_paths(value:&mut serde_json::Value,old:&Path,new:&Path){match value{
     serde_json::Value::String(s)=>{if let Ok(relative)=Path::new(s).strip_prefix(old){*s=new.join(relative).to_string_lossy().into_owned();}},

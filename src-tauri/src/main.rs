@@ -12,6 +12,8 @@ mod db;
 mod import_references;
 mod timestamps;
 mod download;
+mod download_process;
+mod download_staging;
 mod library;
 mod resources;
 mod sources;
@@ -29,6 +31,7 @@ mod branding;
 mod calendar_sync;
 mod library_export;
 mod managed_library;
+mod library_creation;
 use db::{err, Result};
 use notify::Watcher;
 use std::{
@@ -589,6 +592,7 @@ async fn calendar_select(meetings:Vec<calendar_sync::Meeting>,generation:String,
 async fn calendar_apply(meetings:Vec<calendar_sync::Meeting>,generation:String,app:tauri::AppHandle,state:tauri::State<'_,State>)->Result<calendar_sync::Status>{let s=state.inner().clone();let folder=app.state::<LibraryLocation>().config.clone();tauri::async_runtime::spawn_blocking(move||{let _guard=s.content_lock.lock().map_err(err)?;calendar_sync::apply(&folder,&s.db,meetings,&generation)?;let _=app.emit("library-changed",());calendar_sync::status(&folder,&s.db)}).await.map_err(err)?}
 
 fn main() {
+    download_process::worker_entry();
     tauri::Builder::default()
         .manage(website_capture::Jobs::default())
         .plugin(tauri_plugin_dialog::init())
@@ -609,6 +613,7 @@ fn main() {
             let schema_start=std::time::Instant::now();diagnostics::event("library.schema","started",0.,serde_json::json!({}));
             let schema_result=db::init(&db_path);diagnostics::event("library.schema",if schema_result.is_ok(){"success"}else{"error"},schema_start.elapsed().as_secs_f64()*1000.,serde_json::json!({}));schema_result?;
             file_moves::recover_on_startup(&db_path)?;
+            if download_staging::cleanup(&db_path).is_err(){diagnostics::event("download.staging_recovery","error",0.,serde_json::json!({"error_code":"staging_unavailable"}));}
             let db = db::connect(&db_path)?;
             if managed_library::root(&db_path)?.is_none(){resources::seed(&db)?;}
             if db::setting(&db, "root").is_none() {
@@ -781,3 +786,6 @@ mod recovery_contract_tests;
 
 #[cfg(test)]
 mod interruption_tests;
+
+#[cfg(test)]
+mod full_recovery_tests;

@@ -124,6 +124,9 @@ pub fn verify(folder:&Path)->Result<Verification>{
 }
 
 pub fn restore_preferences(folder:&Path, db_path:&Path)->Result<serde_json::Value>{
+    restore_preferences_to(folder,db_path,db_path.parent().ok_or("Missing data folder")?)
+}
+pub fn restore_preferences_to(folder:&Path, db_path:&Path,data:&Path)->Result<serde_json::Value>{
     let file=preferences_path(folder);
     if !file.exists(){return Ok(serde_json::json!({}));}
     let mut value:serde_json::Value=serde_json::from_slice(&fs::read(file).map_err(err)?).map_err(err)?;
@@ -160,7 +163,7 @@ pub fn restore_preferences(folder:&Path, db_path:&Path)->Result<serde_json::Valu
             ids.retain(|id|id.as_str().and_then(|s|s.strip_prefix("project:")).is_some_and(|id|projects.contains_key(id)));
         }}
     }
-    rewrite(&mut value,folder,db_path.parent().ok_or("Missing app data folder")?,&projects)?;
+    rewrite(&mut value,folder,data,&projects)?;
     Ok(value)
 }
 
