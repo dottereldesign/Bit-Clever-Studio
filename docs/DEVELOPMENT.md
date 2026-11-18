@@ -130,7 +130,7 @@ Keep test selectors tied to labels and roles. Expand sidebar sections before poi
 
 After local verification, stage only the requested changes, run `npm run scan:secrets`, then commit and push using existing authentication. A pushed branch is a backup; integration can remain pending. Routine test/docs work does not require `npm run build`, packaging, a version bump, a tag or a release.
 
-For temporary app/process monitoring and a repeatable synthetic browser workload, see [performance diagnostics](PERFORMANCE.md). Use `npm run diagnose:performance` or `npm run diagnose:processes`; both stop after their capture and keep local reports out of Git.
+For temporary app/process monitoring and a repeatable synthetic browser workload, see [performance diagnostics](PERFORMANCE.md). Use `npm run diagnose:performance`, the repeated 4,000/20,000-item `npm run diagnose:libraries` matrix, or `npm run diagnose:processes`; each stops after its capture and keeps local reports out of Git. The performance guide also documents the disposable native database/serialisation profile.
 
 ```powershell
 npm test

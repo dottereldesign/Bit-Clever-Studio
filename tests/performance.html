@@ -3,6 +3,12 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from '/src/App.tsx';
 import '/src/style.css';
+const itemCount=Number(new URLSearchParams(location.search).get('items')||1200);
+if(![1200,4000,20000].includes(itemCount))throw Error('Invalid item count');
+const renderTimes=[];
+const phases={};let frameTimes=[],lastFrame=0,frameHandle;
+function frame(time){if(lastFrame)frameTimes.push(time-lastFrame);lastFrame=time;frameHandle=requestAnimationFrame(frame);}
+frameHandle=requestAnimationFrame(frame);
 const metrics = { observersCreated: 0, observerCallbacks: 0, rectangleReads: 0, mediaCalls: 0, peakCards: 0, commits: 0, renderMs: 0, longTasks: 0, longTaskMs: 0 };
 const NativeObserver = window.ResizeObserver;
 window.ResizeObserver = class extends NativeObserver {
@@ -13,7 +19,7 @@ Element.prototype.getBoundingClientRect = function() { metrics.rectangleReads++;
 const longTasks = new PerformanceObserver(list => list.getEntries().forEach(entry => { metrics.longTasks++; metrics.longTaskMs += entry.duration; }));
 longTasks.observe({ type: 'longtask' });
 const image = id => 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="${[600,300,800,400][Number(id)%4]}"><rect width="400" height="800" fill="#dce5d3"/></svg>`);
-const library = { items: Array.from({length:1200}, (_,n) => ({id:n+1,name:`Reference ${n+1}`,path:`C:/mock/${n+1}.png`,kind:'image',source:'Design',category:'Poster',modified:1,added:n+1,missing:false,tags:[],projects:[7],favourites:[]})), projects:[{id:7,name:'Example project',count:1200}],tags:[],sources:['Design'],root:'C:/mock',scanning:false };
+const library = { items: Array.from({length:itemCount}, (_,n) => ({id:n+1,name:`Reference ${n+1}`,path:`C:/mock/${n+1}.png`,kind:'image',source:'Design',category:'Poster',modified:1,added:n+1,missing:false,tags:[],projects:[7],favourites:[]})), categories:['Poster','Empty'],projects:[{id:7,name:'Example project',count:itemCount}],tags:[],sources:['Design'],root:'C:/mock',scanning:false };
 let callbackId=0;
 window.isTauri=true;
 window.__TAURI_INTERNALS__={transformCallback:()=>++callbackId,convertFileSrc:path=>image(path),invoke:async(command,args)=>{
@@ -25,24 +31,46 @@ window.__TAURI_INTERNALS__={transformCallback:()=>++callbackId,convertFileSrc:pa
   throw Error(command);
 }};
 window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener(){}};
-createRoot(document.getElementById('root')).render(React.createElement(React.Profiler,{id:'app',onRender:(_,__,duration)=>{metrics.commits++;metrics.renderMs+=duration;}},React.createElement(App,{startOnHome:false})));
+const mountStarted=performance.now();
+createRoot(document.getElementById('root')).render(React.createElement(React.Profiler,{id:'app',onRender:(_,__,duration)=>{metrics.commits++;metrics.renderMs+=duration;renderTimes.push(duration);}},React.createElement(App,{startOnHome:false})));
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(test,label){const start=performance.now();while(!test()){if(performance.now()-start>8000)throw Error(label);await pause(30);}}
 function sample(){metrics.peakCards=Math.max(metrics.peakCards,document.querySelectorAll('.card').length);}
 async function noOverlap(){await pause(250);sample();const boxes=[...document.querySelectorAll('.card')].map(el=>el.getBoundingClientRect());for(let a=0;a<boxes.length;a++)for(let b=a+1;b<boxes.length;b++){const x=boxes[a],y=boxes[b];if(x.left<y.right-1&&x.right>y.left+1&&x.top<y.bottom-1&&x.bottom>y.top+1)throw Error('Overlapping thumbnails');}}
 try {
   await until(()=>document.querySelector('.card'),'Library startup');
+  phases.firstCardMs=performance.now()-mountStarted;
+  phases.navigationToFirstCardMs=performance.now();
   [...document.querySelectorAll('.sidebar button')].find(el=>el.textContent.includes('Poster')).click();
   await until(()=>document.querySelector('.poster-masonry'),'Masonry startup');
   await pause(500); sample();
   const content=document.querySelector('.content');
-  for(let n=0;n<12;n++){content.scrollTop=n*450;await pause(80);sample();}
+  async function scrollPass(name){
+    const before={...metrics},start=performance.now();frameTimes=[];
+    for(let n=0;n<24;n++){content.scrollTop=(content.scrollHeight-content.clientHeight)*n/23;await pause(50);sample();}
+    await noOverlap();
+    const times=[...frameTimes].sort((a,b)=>a-b);
+    phases[name]={elapsedMs:performance.now()-start,renderMs:metrics.renderMs-before.renderMs,mediaCalls:metrics.mediaCalls-before.mediaCalls,frameSamples:times.length,frameP95Ms:times[Math.floor(times.length*.95)]||0,maxFrameMs:times.at(-1)||0,longTaskMs:metrics.longTaskMs-before.longTaskMs};
+    if(metrics.peakCards>250)throw Error('Unbounded mounted cards');
+  }
+  await scrollPass('firstScroll');
+  content.scrollTop=0;await pause(300);
+  await scrollPass('repeatScroll');
+  const navStarted=performance.now();
+  const categoryButton=name=>[...document.querySelectorAll('.sidebar button')].find(el=>el.textContent.includes(name));
+  if(!categoryButton('Empty'))throw Error('Missing empty navigation target');
+  for(let n=0;n<6;n++){categoryButton('Empty').click();await pause(25);categoryButton('Poster').click();await pause(25);}
+  await until(()=>document.querySelector('.poster-masonry .card'),'Return after rapid navigation');
+  phases.rapidNavigationMs=performance.now()-navStarted;
   content.scrollTop=0;await pause(300);
   for(let n=0;n<3;n++){
     document.querySelector('.card-open').click();document.querySelector('.card-open').focus();document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:' ',bubbles:true}));await until(()=>document.querySelector('.quick-preview'),'Space preview');await noOverlap();
     document.querySelector('.quick-preview').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await until(()=>!document.querySelector('.quick-preview'),'Close');await noOverlap();
   }
-  document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks:['1200 mixed-aspect thumbnails, scroll, repeated Space preview/close without overlaps'],metrics});
+  renderTimes.sort((a,b)=>a-b);
+  metrics.renderP95Ms=renderTimes[Math.floor(renderTimes.length*.95)]||0;
+  metrics.renderMaxMs=renderTimes.at(-1)||0;
+  document.getElementById('check-result').textContent=JSON.stringify({ok:true,itemCount,checks:[`${itemCount} mixed-aspect thumbnails, full-range first/repeat scroll, rapid category navigation, repeated Space preview/close without overlaps`],phases,metrics});
 }catch(error){document.getElementById('check-result').textContent=JSON.stringify({ok:false,error:String(error),metrics});}
-longTasks.disconnect();
+cancelAnimationFrame(frameHandle);longTasks.disconnect();
 </script></body></html>

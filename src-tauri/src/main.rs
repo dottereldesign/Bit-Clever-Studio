@@ -765,3 +765,6 @@ mod tests;
 
 #[cfg(test)]
 mod batch_regression_tests;
+
+#[cfg(test)]
+mod performance_tests;

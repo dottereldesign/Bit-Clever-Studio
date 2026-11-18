@@ -1,12 +1,14 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { cpus, totalmem, platform, release, tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
 const fixture = process.argv[2] ?? 'grid-return';
 if (!['accessibility','preference-recovery','refresh-consistency','library-isolation','app-themes','my-business', 'sidebar-tools', 'customise-tab-order', 'analytics-reports', 'default-appearance', 'startup', 'analytics', 'home-overview', 'close-lead', 'customise-layouts', 'tab-styles', 'cta-buttons', 'add-contact', 'home-logo', 'client-sidebar', 'calendar-setup', 'clients-performance', 'branding', 'clients', 'sidebar-reorder', 'customise-motion', 'research', 'leads-tour', 'calendar-sync', 'studio', 'sidebar-styles', 'moodboard', 'project-workspace', 'project-folder-drag', 'thumbnail-readiness', 'storage-cache', 'collection-performance', 'settings-page', 'diagnostics', 'project-navigation', 'project-folders', 'link-categories', 'thumbnail-click', 'colour-picker', 'website-scroll', 'hover-preview', 'image-drop', 'clipboard-scroll', 'view-session', 'thumbnail-enlargement', 'component-links', 'customization', 'app-history', 'home-styles', 'thumbnail-loading', 'performance', 'grid-return', 'copy-resources', 'link-boards', 'video-download', 'categories', 'workflow-tools', 'pointer-moves', 'wide-preview', 'library-export'].includes(fixture)) throw Error('Unknown browser test fixture');
 const port = ["wide-preview", "performance"].includes(fixture) ? "1422" : "1421";
-const testUrl = `http://127.0.0.1:${port}/tests/${fixture}.html`;
+const perfItems = Number(process.env.DESIGN_PERF_ITEMS || 1200);
+if (fixture === 'performance' && ![1200,4000,20000].includes(perfItems)) throw Error('DESIGN_PERF_ITEMS must be 1200, 4000 or 20000');
+const testUrl = `http://127.0.0.1:${port}/tests/${fixture}.html${fixture === 'performance' ? `?items=${perfItems}` : ''}`;
 
 const chrome = [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA]
   .filter(Boolean).map(root => join(root, 'Google/Chrome/Application/chrome.exe')).find(existsSync);
@@ -28,6 +30,7 @@ try {
       // An isolated headless process uses real browser frames and keyboard events.
       // It never attaches to, opens or focuses the user's browser windows.
       const child = spawn(chrome, ['--headless', '--disable-gpu', '--disable-extensions', '--disable-background-networking', '--no-first-run', '--no-default-browser-check', '--remote-debugging-pipe', `--user-data-dir=${profile}`], { stdio: ['ignore', 'pipe', 'pipe', 'pipe', 'pipe'], windowsHide: true });
+      let browserVersion;
       let sequence = 0, buffered = '', result;
       const pending = new Map();
       child.stdio[4].on('data', chunk => {
@@ -51,7 +54,7 @@ try {
         child.stdio[3].write(JSON.stringify({ id, method, params, sessionId }) + '\0');
       });
       try {
-        await call('Browser.getVersion');
+        browserVersion = await call('Browser.getVersion');
         const { targetId } = await call('Target.createTarget', { url: 'about:blank' });
         const { sessionId } = await call('Target.attachToTarget', { targetId, flatten: true });
         const [width, height] = dimensions.split(',').map(Number);
@@ -66,7 +69,7 @@ try {
         let lastKeyAction=0,lastAxRequest=0;
         let captured = false;
         let lastCaptureName="";
-        const deadline = Date.now() + (['home-styles','customization','grid-return'].includes(fixture)?120000:60000);
+        const deadline = Date.now() + (['home-styles','customization','grid-return','performance'].includes(fixture)?120000:60000);
         while (Date.now() < deadline) {
           const { result: state } = await call('Runtime.evaluate', { expression: '({ report: document.getElementById("check-result")?.textContent, enter: !!window.__awaitNativeEnter, pointer: window.__pointerAction, wheel: window.__wheelAction, resize: window.__resizeAction, capture: !!window.__screenshotReady, captureName: window.__captureName, keyAction: window.__keyAction, axRequest: window.__axRequest })', returnByValue: true }, sessionId);
           if (['app-themes','my-business','sidebar-tools', 'customise-tab-order', 'analytics-reports', 'default-appearance', 'startup', 'analytics', 'home-overview', 'close-lead', 'customise-layouts', 'tab-styles', 'cta-buttons', 'add-contact', 'calendar-setup', 'clients-performance', 'branding', 'clients', 'sidebar-reorder', 'customise-motion', 'research', 'leads-tour', 'calendar-sync', 'studio', 'sidebar-styles', 'moodboard', 'project-workspace', 'settings-page', 'diagnostics', 'project-folder-drag', 'project-folders', 'link-categories', 'thumbnail-click', 'colour-picker', 'website-scroll', 'link-boards', 'hover-preview', 'library-export', 'image-drop', 'view-session', 'thumbnail-enlargement', 'copy-resources', 'component-links', 'customization', 'home-styles', 'thumbnail-loading', 'wide-preview', 'workflow-tools', 'categories'].includes(fixture) && state.value?.capture && (!captured || (['app-themes','my-business','sidebar-tools','settings-page','analytics-reports','analytics','studio','home-styles','customization','project-workspace','cta-buttons','home-overview','close-lead'].includes(fixture)&&state.value.captureName!==lastCaptureName))) {
@@ -153,7 +156,7 @@ try {
         const label = process.env.DESIGN_PERF_LABEL || 'latest';
         if (!/^[a-z0-9_-]+$/i.test(label)) throw Error('Invalid performance label');
         await mkdir('.tools/performance', { recursive: true });
-        await writeFile(`.tools/performance/${label}.json`, JSON.stringify({ capturedAt: new Date().toISOString(), dimensions, ...result }, null, 2));
+        await writeFile(`.tools/performance/${label}.json`, JSON.stringify({ capturedAt: new Date().toISOString(), dimensions, environment: { node: process.version, chrome: browserVersion.product, platform: platform(), osRelease: release(), cpu: cpus()[0]?.model, logicalProcessors: cpus().length, memoryGiB: totalmem()/2**30, commit: execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(), dirty: !!execFileSync('git',['status','--porcelain'],{encoding:'utf8'}).trim(), mode: 'Vite development, headless Chrome, GPU disabled' }, ...result }, null, 2));
       }
       if (!result.ok) throw Error(result.error);
     } finally {
