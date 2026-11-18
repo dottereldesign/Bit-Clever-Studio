@@ -363,6 +363,10 @@ pub fn capture(db_path: &Path, c: Capture) -> Result<CaptureResult> {
     capture_with_progress(db_path,c,&mut |_|{})
 }
 pub fn capture_with_progress(db_path: &Path, c: Capture, progress:&mut impl FnMut(DuplicateProgress)) -> Result<CaptureResult> {
+    crate::file_moves::reconcile(db_path)?;
+    capture_inner(db_path,c,progress).map_err(|error|crate::file_moves::rollback_error(db_path,error))
+}
+fn capture_inner(db_path: &Path, c: Capture, progress:&mut impl FnMut(DuplicateProgress)) -> Result<CaptureResult> {
     // Reject an unsupported destination before importing any part of a batch.
     if c.projects.is_empty() && c.studio.is_none() && c.files.iter().any(|file| library::kind(Path::new(&file.path)).is_none()) {
         return Err("Add these files to a project. Design Inspo and App Components accept images and videos.".into());
@@ -547,13 +551,16 @@ pub fn capture_with_progress(db_path: &Path, c: Capture, progress:&mut impl FnMu
             let mut used=fs::read_dir(&destination).map_err(err)?.filter_map(|e|e.ok()).map(|e|format!("/{0}",e.file_name().to_string_lossy()).to_lowercase()).collect();
             destination.join(crate::library_export::allocate_filename(if c.name.trim().is_empty(){Path::new(original).file_stem().and_then(|s|s.to_str()).unwrap_or("Saved Image")}else{&c.name},Path::new(original),"",&mut used))
         }else{destination.join(format!("{}-{original}", nonce()))};
-        let temporary = target.with_extension("pending");
-        fs::copy(&path, &temporary).map_err(err)?;
-        if hash_file(&temporary)? != fp.file {
-            let _ = fs::remove_file(&temporary);
+        let temporary = tempfile::NamedTempFile::new_in(&destination).map_err(err)?;
+        fs::copy(&path, temporary.path()).map_err(err)?;
+        if hash_file(temporary.path())? != fp.file || hash_file(&path)? != fp.file {
             return Err("The source file changed during capture. Try again.".into());
         }
-        fs::rename(&temporary, &target).map_err(err)?;
+        temporary.as_file().sync_all().map_err(err)?;
+        crate::import_copies::record(&db,&target,temporary.path(),&fp.file)?;
+        crate::file_moves::checkpoint("capture.after_copy_intent");
+        temporary.persist_noclobber(&target).map_err(err)?;
+        crate::file_moves::checkpoint("capture.after_publish");
         let target = target.canonicalize().map_err(err)?;
         let modified = crate::timestamps::unix_millis_or_zero(fs::metadata(&target)
             .map_err(err)?
@@ -602,7 +609,11 @@ pub fn capture_with_progress(db_path: &Path, c: Capture, progress:&mut impl FnMu
         store(&tx, id, &Fingerprint { modified, ..fp })?;
         crate::history::record(&tx,"Add reference",patches)?;
         result.history_labels.push("Add reference".to_owned());
-        crate::clients::end(&tx)?;tx.commit().map_err(err)?;
+        crate::clients::end(&tx)?;
+        crate::file_moves::checkpoint("capture.before_commit");
+        crate::import_copies::finish(&tx)?;
+        tx.commit().map_err(err)?;
+        crate::file_moves::checkpoint("capture.after_commit");
         result.ids.push(id);
         result.added += 1;
         report(position+1,input.name.clone());

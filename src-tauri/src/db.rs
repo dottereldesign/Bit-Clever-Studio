@@ -777,6 +777,10 @@ pub fn export(path: &Path, destination: PathBuf) -> Result<()> {
     std::fs::write(destination, serde_json::to_vec_pretty(&data).map_err(err)?).map_err(err)
 }
 pub fn import(path: &Path, source: PathBuf) -> Result<()> {
+    crate::file_moves::reconcile(path)?;
+    import_inner(path,source).map_err(|error|crate::file_moves::rollback_error(path,error))
+}
+fn import_inner(path: &Path, source: PathBuf) -> Result<()> {
     let mut backup: Backup =
         serde_json::from_slice(&std::fs::read(&source).map_err(err)?).map_err(err)?;
     if backup.version != 1 {
@@ -792,7 +796,7 @@ pub fn import(path: &Path, source: PathBuf) -> Result<()> {
         backup.library.root=crate::library_export::resolve_relative(&base,&backup.library.root)?;
         for (_,path) in &mut backup.library.source_paths {*path=crate::library_export::resolve_relative(&base,path)?;}
     }
-    if let Some(folder)=crate::managed_library::root(path)?{crate::managed_library::own_import(&folder,&mut backup.library.items)?;}
+    if let Some(folder)=crate::managed_library::root(path)?{crate::managed_library::own_import(path,&folder,&mut backup.library.items)?;}
     let mut db = connect(path)?;
     let tx = db.transaction().map_err(err)?;
     set_setting(&tx,"client_event_action","import_client_backup")?;
@@ -944,7 +948,10 @@ pub fn import(path: &Path, source: PathBuf) -> Result<()> {
     tx.execute("DELETE FROM organisation_history",[]).map_err(err)?;
     tx.execute("DELETE FROM organisation_redo",[]).map_err(err)?;
     crate::clients::end(&tx)?;
+    crate::file_moves::checkpoint("import.before_commit");
+    crate::import_copies::finish(&tx)?;
     tx.commit().map_err(err)?;
+    crate::file_moves::checkpoint("import.after_commit");
     Ok(())
 }
 

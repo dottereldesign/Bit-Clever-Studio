@@ -7,6 +7,7 @@ mod storage;
 mod clipboard;
 mod content;
 mod file_moves;
+mod import_copies;
 mod db;
 mod import_references;
 mod timestamps;

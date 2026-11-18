@@ -1,4 +1,4 @@
-//! Durable intent for duplicate removal/restoration across SQLite and filesystem boundaries.
+//! Durable intent for owned-file moves across SQLite and filesystem boundaries.
 use crate::{
     content::hash_file,
     db::{self, err, Result},
@@ -20,6 +20,7 @@ pub fn recover_on_startup(path: &Path) -> Result<()> {
 }
 
 pub fn init(db: &Connection) -> Result<()> {
+    crate::import_copies::init(db)?;
     db.execute_batch("CREATE TABLE IF NOT EXISTS file_move_journal(item_id INTEGER PRIMARY KEY REFERENCES items(id),source TEXT NOT NULL,destination TEXT NOT NULL,sha256 TEXT NOT NULL);").map_err(err)
 }
 pub fn record(db: &Connection, id: i64, source: &Path, destination: &Path) -> Result<()> {
@@ -120,6 +121,7 @@ pub fn reconcile(path: &Path) -> Result<()> {
         }
         finish(&tx, id)?;
     }
+    crate::import_copies::reconcile(&tx)?;
     tx.commit().map_err(err)?;
     if db::setting(&db, "maintenance_warning")
         .is_some_and(|warning| warning.starts_with(RECOVERY_WARNING))

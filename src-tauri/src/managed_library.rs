@@ -51,6 +51,7 @@ fn rewrite_paths(value:&mut serde_json::Value,old:&Path,new:&Path){match value{
 }}
 pub fn rebase(path:&Path,folder:&Path)->Result<()> {
     let mut conn=db::connect(path)?;let old=PathBuf::from(db::setting(&conn,"managed_root").ok_or("This is not a managed Bit Clever library")?);
+    crate::import_copies::init(&conn)?;
     let folder=folder.canonicalize().map_err(err)?;if old==folder{return Ok(());}
     let rows={let mut q=conn.prepare("SELECT id,path,thumbnail,kind FROM items").map_err(err)?;let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?))).map_err(err)?;rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?};
     let tx=conn.transaction().map_err(err)?;
@@ -60,6 +61,7 @@ pub fn rebase(path:&Path,folder:&Path)->Result<()> {
         tx.execute("UPDATE items SET path=?,thumbnail=? WHERE id=?",rusqlite::params![media,thumb,id]).map_err(err)?;
     }
     if let Some(saved)=db::setting(&tx,"appearance_preferences"){let mut prefs:serde_json::Value=serde_json::from_str(&saved).map_err(err)?;rewrite_paths(&mut prefs,&old,&folder);db::set_setting(&tx,"appearance_preferences",&serde_json::to_string(&prefs).map_err(err)?)?;}
+    crate::import_copies::rebase(&tx,&old,&folder)?;
     for table in ["organisation_history","organisation_redo"] {
         let patches={let mut q=tx.prepare(&format!("SELECT id,patches FROM {table}")).map_err(err)?;let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?))).map_err(err)?;rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?};
         for (id,text) in patches {let mut value:serde_json::Value=serde_json::from_str(&text).map_err(err)?;rewrite_paths(&mut value,&old,&folder);tx.execute(&format!("UPDATE {table} SET patches=? WHERE id=?"),rusqlite::params![value.to_string(),id]).map_err(err)?;}
@@ -125,7 +127,10 @@ pub fn organise(path:&Path)->Result<()> {
         fs::create_dir_all(&destination).map_err(err)?;
         let mut used:HashSet<String>=fs::read_dir(&destination).map_err(err)?.filter_map(|e|e.ok()).map(|e|format!("{}/{}",library_export::collection(item),e.file_name().to_string_lossy()).to_lowercase()).collect();
         let name=library_export::allocate_filename(&item.name,source,library_export::collection(item),&mut used);let target=destination.join(name);
-        fs::rename(source,&target).map_err(err)?;
+        crate::file_moves::record(&db,item.id,source,&target)?;
+        crate::file_moves::checkpoint("organise.after_intent");
+        if let Err(error)=crate::file_moves::move_file(source,&target){return Err(crate::file_moves::rollback_error(path,error));}
+        crate::file_moves::checkpoint("organise.after_move");
         let old_relative=source.strip_prefix(&folder).map_err(err)?.to_string_lossy().replace('\\',"/");
         let new_relative=target.strip_prefix(&folder).map_err(err)?.to_string_lossy().replace('\\',"/");
         let result=(||->Result<()>{
@@ -133,21 +138,23 @@ pub fn organise(path:&Path)->Result<()> {
             tx.execute("UPDATE items SET path=? WHERE id=?",rusqlite::params![target.to_string_lossy(),item.id]).map_err(err)?;
             tx.execute_batch("CREATE TABLE IF NOT EXISTS managed_checksums(path TEXT PRIMARY KEY,sha256 TEXT NOT NULL);").map_err(err)?;
             tx.execute("UPDATE OR REPLACE managed_checksums SET path=? WHERE path=?",rusqlite::params![new_relative,old_relative]).map_err(err)?;
+            crate::file_moves::finish(&tx,item.id)?;
             tx.commit().map_err(err)
         })();
-        if let Err(error)=result{let _=fs::rename(&target,source);return Err(error);}
+        if let Err(error)=result{return Err(crate::file_moves::rollback_error(path,error));}
+        crate::file_moves::checkpoint("organise.after_commit");
     }
     refresh_browser(path)
 }
 // Copy imports before committing their records. Existing originals remain untouched.
-pub fn own_import(folder:&Path,items:&mut [db::Item])->Result<()> {
+pub fn own_import(path:&Path,folder:&Path,items:&mut [db::Item])->Result<()> {
     for item in items.iter(){for file in [if item.kind!="link"{item.path.as_str()}else{""},item.thumbnail.as_str()] {if !file.is_empty()&&!Path::new(file).is_file(){return Err(format!("Cannot merge a missing file: {file}"));}}}
     for item in items {
-        if item.kind!="link"{item.path=copy_owned(folder,&item.path,library_export::collection(item),&item.name)?;}
-        if !item.thumbnail.is_empty(){item.thumbnail=copy_owned(folder,&item.thumbnail,"Library Data/Thumbnails","Thumbnail")?;}
+        if item.kind!="link"{item.path=copy_owned(path,folder,&item.path,library_export::collection(item),&item.name)?;}
+        if !item.thumbnail.is_empty(){item.thumbnail=copy_owned(path,folder,&item.thumbnail,"Library Data/Thumbnails","Thumbnail")?;}
     }Ok(())
 }
-fn copy_owned(folder:&Path,source:&str,group:&str,title:&str)->Result<String>{
+fn copy_owned(db_path:&Path,folder:&Path,source:&str,group:&str,title:&str)->Result<String>{
     let source=Path::new(source).canonicalize().map_err(err)?;if source.starts_with(folder){return Ok(source.to_string_lossy().into_owned());}
     let destination=folder.join(group);fs::create_dir_all(&destination).map_err(err)?;
     let expected=library_export::checksum(&source)?;
@@ -157,7 +164,12 @@ fn copy_owned(folder:&Path,source:&str,group:&str,title:&str)->Result<String>{
     let target=destination.join(library_export::allocate_filename(title,&source,group,&mut used));
     let temp=tempfile::NamedTempFile::new_in(&destination).map_err(err)?;fs::copy(&source,temp.path()).map_err(err)?;
     if library_export::checksum(temp.path())?!=expected||library_export::checksum(&source)?!=expected{return Err("An imported file changed while being copied.".into());}
-    temp.as_file().sync_all().map_err(err)?;temp.persist_noclobber(&target).map_err(err)?;Ok(target.to_string_lossy().into_owned())
+    temp.as_file().sync_all().map_err(err)?;
+    crate::import_copies::record(&db::connect(db_path)?,&target,temp.path(),&expected)?;
+    crate::file_moves::checkpoint("import.after_copy_intent");
+    temp.persist_noclobber(&target).map_err(err)?;
+    crate::file_moves::checkpoint("import.after_publish");
+    Ok(target.to_string_lossy().into_owned())
 }
 #[derive(Serialize)]
 pub struct CollectionStorage{pub name:String,pub count:usize,pub bytes:u64,pub path:Option<String>}

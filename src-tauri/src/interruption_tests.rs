@@ -91,6 +91,9 @@ fn crash_worker() {
             .unwrap();
         }
         "restore" => content::restore(&path, 2).unwrap(),
+        "organise" => managed_library::organise(&path).unwrap(),
+        "import" => db::import(&path, root.join("incoming.json")).unwrap(),
+        "capture" => {content::capture(&path,capture_input(&root)).unwrap();},
         _ => panic!("Unknown fixture operation"),
     }
     panic!("Crash checkpoint not reached");
@@ -316,4 +319,109 @@ fn partially_committed_duplicate_batch_can_be_retried_as_a_whole() {
         content::restore(&path, id).unwrap();
         assert!(root.join(format!("{id}.png")).is_file());
     }
+}
+
+fn import_fixture() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
+    let (temp,path,root)=fixture();
+    let original=temp.path().join("external.png");
+    image::RgbImage::from_pixel(3,3,image::Rgb([98,76,54])).save(&original).unwrap();
+    let metadata=root.join("incoming.json");db::export(&path,metadata.clone()).unwrap();
+    let mut backup:serde_json::Value=serde_json::from_slice(&fs::read(&metadata).unwrap()).unwrap();
+    let mut item=backup["library"]["items"][0].clone();item["path"]=serde_json::json!(original);item["name"]=serde_json::json!("External");item["thumbnail"]=serde_json::json!(original);
+    backup["library"]["items"]=serde_json::json!([item]);
+    fs::write(metadata,serde_json::to_vec(&backup).unwrap()).unwrap();
+    (temp,path,root,original)
+}
+fn import_pending(path:&Path)->i64 {
+    db::connect(path).unwrap().query_row("SELECT count(*) FROM import_copy_journal",[],|r|r.get(0)).unwrap()
+}
+#[test]
+fn interrupted_organisation_restores_paths_or_preserves_the_commit_and_retries() {
+    for point in ["organise.after_intent","move.after_publish","organise.after_move","organise.after_commit"] {
+        let (_temp,path,root)=fixture();
+        let hashes:Vec<_>=db::load(&path,false).unwrap().items.iter().map(|i|content::hash_file(Path::new(&i.path)).unwrap()).collect();
+        crash(&path,&root,"organise",point);
+        file_moves::reconcile(&path).unwrap();
+        for (item,hash) in db::load(&path,false).unwrap().items.iter().zip(&hashes){assert_eq!(&content::hash_file(Path::new(&item.path)).unwrap(),hash);}
+        managed_library::organise(&path).unwrap();managed_library::organise(&path).unwrap();
+        assert_eq!(pending(&path),0);
+        let library=db::load(&path,false).unwrap();assert_eq!(library.items.len(),2);
+        assert!(library.items.iter().all(|i|Path::new(&i.path).parent()==Some(root.join("Design Inspo").as_path())));
+        assert!(library.items.iter().find(|i|i.id==2).unwrap().projects.contains(&1));
+    }
+}
+#[test]
+fn organisation_commit_failure_rolls_files_back() {
+    let (_temp,path,root)=fixture();
+    db::connect(&path).unwrap().execute_batch("CREATE TRIGGER reject_path BEFORE UPDATE OF path ON items BEGIN SELECT RAISE(ABORT,'injected failure'); END;").unwrap();
+    assert!(managed_library::organise(&path).is_err());assert_eq!(pending(&path),0);
+    assert!(root.join("1.png").is_file());assert!(root.join("2.png").is_file());
+    db::connect(&path).unwrap().execute_batch("DROP TRIGGER reject_path;").unwrap();
+    managed_library::organise(&path).unwrap();
+}
+#[test]
+fn interrupted_import_cleans_provisional_copies_and_retries_without_duplicates() {
+    for point in ["import.after_copy_intent","import.after_publish","import.before_commit","import.after_commit"] {
+        let (_temp,path,root,original)=import_fixture();let bytes=fs::read(&original).unwrap();
+        crash(&path,&root,"import",point);
+        assert_eq!(db::load(&path,false).unwrap().items.len(),if point=="import.after_commit"{3}else{2});
+        file_moves::reconcile(&path).unwrap();assert_eq!(import_pending(&path),0);
+        db::import(&path,root.join("incoming.json")).unwrap();db::import(&path,root.join("incoming.json")).unwrap();
+        let library=db::load(&path,false).unwrap();assert_eq!(library.items.len(),3);
+        let imported=library.items.iter().find(|i|i.name=="External").unwrap();assert_eq!(fs::read(&imported.path).unwrap(),bytes);assert_eq!(fs::read(&imported.thumbnail).unwrap(),bytes);
+        assert_eq!(fs::read(&original).unwrap(),bytes);assert_eq!(import_pending(&path),0);
+        assert_eq!(fs::read_dir(root.join("Design Inspo")).unwrap().count(),1);
+    }
+}
+#[test]
+fn invalid_import_rolls_back_its_published_copies() {
+    let (_temp,path,root,original)=import_fixture();let metadata=root.join("incoming.json");
+    let mut backup:serde_json::Value=serde_json::from_slice(&fs::read(&metadata).unwrap()).unwrap();
+    backup["library"]["items"][0]["kind"]=serde_json::json!("invalid");fs::write(&metadata,serde_json::to_vec(&backup).unwrap()).unwrap();
+    assert!(db::import(&path,metadata).is_err());assert_eq!(db::load(&path,false).unwrap().items.len(),2);
+    assert_eq!(import_pending(&path),0);assert_eq!(fs::read_dir(root.join("Design Inspo")).unwrap().count(),0);assert!(original.is_file());
+}
+#[test]
+fn interrupted_import_preserves_conflicts_and_rebases_with_the_library() {
+    let (temp,path,root,original)=import_fixture();let bytes=fs::read(&original).unwrap();
+    crash(&path,&root,"import","import.after_publish");
+    let target:String=db::connect(&path).unwrap().query_row("SELECT destination FROM import_copy_journal",[],|r|r.get(0)).unwrap();
+    fs::write(&target,b"Changed after interruption").unwrap();assert!(file_moves::reconcile(&path).is_err());
+    assert_eq!(fs::read(&target).unwrap(),b"Changed after interruption");assert_eq!(import_pending(&path),1);
+    fs::write(&target,&bytes).unwrap();let moved=temp.path().join("Relocated");fs::rename(&root,&moved).unwrap();
+    let moved_db=moved.join("Library Data/Library.sqlite");managed_library::rebase(&moved_db,&moved).unwrap();
+    file_moves::reconcile(&moved_db).unwrap();assert_eq!(import_pending(&moved_db),0);
+    db::import(&moved_db,moved.join("incoming.json")).unwrap();assert_eq!(db::load(&moved_db,false).unwrap().items.len(),3);
+    assert_eq!(fs::read(original).unwrap(),bytes);
+}
+
+fn capture_input(root:&Path)->content::Capture {
+    serde_json::from_value(serde_json::json!({"source":"Design","projects":[1],"files":[{"path":root.parent().unwrap().join("external.png"),"name":"External.png"}]})).unwrap()
+}
+#[test]
+fn interrupted_capture_recovers_media_memberships_and_history() {
+    for point in ["capture.after_copy_intent","capture.after_publish","capture.before_commit","capture.after_commit"] {
+        let (_temp,path,root,original)=import_fixture();let bytes=fs::read(&original).unwrap();
+        let destination=root.join("Design Inspo");fs::create_dir_all(&destination).unwrap();
+        db::set_setting(&db::connect(&path).unwrap(),"root",destination.to_str().unwrap()).unwrap();
+        crash(&path,&root,"capture",point);file_moves::reconcile(&path).unwrap();
+        content::capture(&path,capture_input(&root)).unwrap();content::capture(&path,capture_input(&root)).unwrap();
+        let library=db::load(&path,false).unwrap();assert_eq!(library.items.len(),3);
+        let item=library.items.iter().find(|i|i.name=="External").unwrap();assert!(item.projects.contains(&1));
+        assert_eq!(fs::read(&item.path).unwrap(),bytes);assert_eq!(fs::read(&original).unwrap(),bytes);
+        assert_eq!(import_pending(&path),0);assert_eq!(fs::read_dir(destination).unwrap().count(),1);
+        assert_eq!(library.undo_entries.iter().filter(|e|e.label=="Add reference").count(),1);
+    }
+}
+
+#[test]
+fn failed_capture_keeps_original_and_removes_only_its_provisional_copy() {
+    let (_temp,path,root,original)=import_fixture();let bytes=fs::read(&original).unwrap();
+    let destination=root.join("Design Inspo");fs::create_dir_all(&destination).unwrap();
+    db::set_setting(&db::connect(&path).unwrap(),"root",destination.to_str().unwrap()).unwrap();
+    let mut input=capture_input(&root);input.projects=vec![9999];
+    assert!(content::capture(&path,input).is_err());assert_eq!(import_pending(&path),0);
+    assert_eq!(fs::read_dir(&destination).unwrap().count(),0);assert_eq!(fs::read(&original).unwrap(),bytes);
+    assert_eq!(db::load(&path,false).unwrap().items.len(),2);
+    content::capture(&path,capture_input(&root)).unwrap();assert_eq!(db::load(&path,false).unwrap().items.len(),3);
 }
