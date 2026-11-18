@@ -1495,7 +1495,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
             )}
           </div>
           <div className="header-actions">
-            <ThumbnailProgress />
+            <ThumbnailProgress title={title} />
             <ColourPicker projects={lib.projects}/>
             {project!==null&&projectSection==="files"&&<button className="subtle-button" onClick={()=>setExtraDialog("sheet")}><Grid2X2 size={14}/>Contact sheet</button>}
             <button className="icon-button" aria-label="Undo organisation change" disabled={!historyActions.undoLabel||undoing} title={historyActions.undoLabel?`Undo: ${historyActions.undoLabel} (Ctrl+Z)`:"Nothing to undo"} onClick={()=>void undoLast()}><Undo2 size={16}/></button>
