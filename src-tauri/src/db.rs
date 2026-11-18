@@ -193,7 +193,14 @@ pub fn touch_project(db: &Connection, project: i64) -> Result<()> {
     )
 }
 pub fn load(path: &Path, scanning: bool) -> Result<Library> {
-    let db = connect(path)?;
+    load_snapshot(path, scanning, || {})
+}
+// The observer lets regression tests commit a writer between component reads.
+fn load_snapshot(path: &Path, scanning: bool, after_items: impl FnOnce()) -> Result<Library> {
+    let connection = connect(path)?;
+    // Keep items, memberships, counts and history on the same WAL snapshot.
+    // A deferred read transaction does not acquire the shared content write lock.
+    let db = connection.unchecked_transaction().map_err(err)?;
     let mut stmt = db
         .prepare("SELECT id,path,name,kind,source,modified,added,missing,source_url,thumbnail,rating,project_only FROM items WHERE archived=0 ORDER BY id")
         .map_err(err)?;
@@ -223,6 +230,7 @@ pub fn load(path: &Path, scanning: bool) -> Result<Library> {
         .map_err(err)?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(err)?;
+    after_items();
     let lookup: std::collections::HashMap<i64, usize> =
         items.iter().enumerate().map(|(n, i)| (i.id, n)).collect();
     {
@@ -365,6 +373,45 @@ pub fn load(path: &Path, scanning: bool) -> Result<Library> {
         source_paths,
     })
 }
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn library_read_keeps_items_memberships_counts_and_history_on_one_snapshot() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("snapshot.sqlite");
+        init(&path).unwrap();
+        let mut writer = connect(&path).unwrap();
+        writer.execute_batch("INSERT INTO items(id,path,name,kind,added) VALUES(1,'https://example.test','before','link',1);
+            INSERT INTO projects(id,name) VALUES(1,'before');
+            INSERT INTO item_projects(item_id,label_id) VALUES(1,1);").unwrap();
+        let before = load(&path, false).unwrap();
+        let snapshot = load_snapshot(&path, false, || {
+            // Commit after the item SELECT has completed, before memberships,
+            // label counts and history are read. No timing or real library data.
+            let tx = writer.transaction().unwrap();
+            tx.execute_batch("UPDATE items SET name='after' WHERE id=1;
+                UPDATE projects SET name='after' WHERE id=1;
+                DELETE FROM item_projects WHERE item_id=1;").unwrap();
+            crate::history::record(&tx, "Concurrent change", vec![]).unwrap();
+            tx.commit().unwrap();
+        }).unwrap();
+        assert_eq!(snapshot.items[0].name, "before");
+        assert_eq!(snapshot.items[0].projects, vec![1]);
+        assert_eq!(snapshot.projects[0].name, "before");
+        assert_eq!(snapshot.projects[0].count, 1);
+        assert_eq!(snapshot.undo_count, before.undo_count);
+        let next = load(&path, false).unwrap();
+        assert_eq!(next.items[0].name, "after");
+        assert!(next.items[0].projects.is_empty());
+        assert_eq!(next.projects[0].name, "after");
+        assert_eq!(next.projects[0].count, 0);
+        assert_eq!(next.undo_count, before.undo_count + 1);
+        assert_eq!(next.undo_label.as_deref(), Some("Concurrent change"));
+    }
+}
+
 pub fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

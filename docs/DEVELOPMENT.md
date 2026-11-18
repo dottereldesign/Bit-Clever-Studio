@@ -162,3 +162,7 @@ Tests cover combined filters, project-specific pin ordering, source descendants,
 `test:preview` checks the side preview at 3440, 1920, 1600 and 1599 pixels, including live resizing across the breakpoint, Recently added clicks and scrolling, current-thumbnail highlighting, arrow navigation, close behaviour and filtering. Poster galleries separately exercise Space preview and masonry layout. It uses an isolated mocked library.
 
 The Links table includes a Category column, also shown for ordinary links within projects. Link categories use the existing `Links/<category>` source namespace and are preserved by metadata and portable backups. Uncategorized links display a dash. They do not create Design Inspo or App Components folders.
+
+### Refresh consistency regression
+
+`node scripts/check-grid-return.mjs refresh-consistency` runs the actual App with delayed synthetic library responses at wide and narrow sizes. It verifies event coalescing, visible project state, and exactly-once native history recording. It is included in `test:browser:smoke`. `npm test` also covers coordinator burst/error/retry behaviour. The native `snapshot_tests` test commits a synthetic writer after item loading and verifies that relationships, counts and history remain on the same read snapshot; the next load sees the committed change. No real library is used.

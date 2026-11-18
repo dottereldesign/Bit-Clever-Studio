@@ -1,3 +1,4 @@
+import {createRefreshCoordinator} from "./refreshCoordinator";
 import {useAppTheme} from './AppTheme';
 import MyBusiness, {BusinessNavigation} from './MyBusiness';
 import SidebarTools from './SidebarTools';
@@ -401,8 +402,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
   const searchRef = useRef<HTMLInputElement>(null),
     anchor = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const refresh = useCallback(async function refresh() {
-    const next = await loadLibrary();
+  const [refresh] = useState<() => Promise<Library>>(() => createRefreshCoordinator(loadLibrary, next => {
     // Observe native history itself, including imports/downloads completed by
     // other dialogs, rather than trying to enumerate every possible save path.
     if(historyReady.current&&next.undo_entries){
@@ -417,8 +417,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
     libRef.current=next;setLib(next);
     setError(previous=>next.maintenance_warning??(previous.startsWith("Saved your changes, but library files")?"":previous));
     setReady(true);
-    return next;
-  }, []);
+  }));
   const clientInitialisation=useRef<{root:string;pending:Promise<unknown>}|null>(null);
   const initialiseClients=useCallback(()=>{
     const root=libRef.current.root;
@@ -445,11 +444,15 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
             void refresh().catch(report);
           },
         ],
-        ["scan-started", () => setLib((l) => ({ ...l, scanning: true }))],
+        ["scan-started", () => {
+          libRef.current={...libRef.current,scanning:true};setLib(libRef.current);
+          void refresh().catch(report);
+        }],
         [
           "scan-error",
           (e: { payload: unknown }) => {
-            setLib((l) => ({ ...l, scanning: false }));
+            libRef.current={...libRef.current,scanning:false};setLib(libRef.current);
+            void refresh().catch(report);
             report(e.payload);
           },
         ],
