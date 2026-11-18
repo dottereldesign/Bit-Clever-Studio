@@ -58,3 +58,19 @@ test('undo and redo cannot place malformed nested preferences into the live cach
   await h.undo();assert.deepEqual(h.read('project-file-layouts',()=>({})),{});
   await h.redo();assert.deepEqual((h.read('project-file-layouts',()=>({})) as any)['project:1'].columns,['type','size','modified','rating']);
 });
+
+
+test('failed restore retains the current preferences and reset snapshot for a successful retry',async()=>{
+  const s=storage({'active-library-root':'A','sidebar-width':'305','draft:private':'"keep"'});
+  await recoverStoredPreferences(false,async()=>{},s);
+  const previous=previousPreferences(s);
+  s.setItem('sidebar-width','400');
+  await assert.rejects(recoverStoredPreferences(true,async()=>{throw Error('disk full');},s),/disk full/);
+  assert.equal(s.getItem('sidebar-width'),'400');
+  assert.deepEqual(previousPreferences(s),previous);
+  assert.equal(s.getItem('draft:private'),'"keep"');
+  const persisted:unknown[]=[];
+  await recoverStoredPreferences(true,async values=>{persisted.push(values);},s);
+  assert.equal(s.getItem('sidebar-width'),'305');
+  assert.deepEqual(persisted,[{'sidebar-width':305}]);
+});

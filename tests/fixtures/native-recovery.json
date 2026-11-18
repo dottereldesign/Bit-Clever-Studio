@@ -1,0 +1,979 @@
+{
+  "imported": {
+    "categories": [
+      "Components / Uncategorised",
+      "Illustration",
+      "Photography"
+    ],
+    "client_records": {
+      "contacts": [],
+      "records": [
+        {
+          "archived": false,
+          "body": "",
+          "date": "",
+          "files": [
+            2
+          ],
+          "id": "note",
+          "kind": "meeting",
+          "people": [],
+          "project_id": 8,
+          "related": [],
+          "status": "",
+          "title": "Contract meeting"
+        }
+      ]
+    },
+    "items": [
+      {
+        "added": 1,
+        "category": null,
+        "category_added": {},
+        "component_folders": [],
+        "design_folders": [],
+        "favourites": [],
+        "id": 1,
+        "kind": "link",
+        "missing": false,
+        "modified": 0,
+        "name": "Unrelated",
+        "path": "https://example.test/unrelated",
+        "project_folders": [],
+        "project_only": false,
+        "projects": [],
+        "rating": null,
+        "source": "",
+        "source_url": "",
+        "tags": [],
+        "thumbnail": ""
+      },
+      {
+        "added": 1700000000000,
+        "category": "",
+        "category_added": {
+          "All Components": 1794983424894,
+          "Components / Products": 1794983424894,
+          "Illustration": 1794983424876
+        },
+        "component_folders": [
+          "Components / Products"
+        ],
+        "design_folders": [
+          "Illustration"
+        ],
+        "favourites": [
+          8
+        ],
+        "id": 2,
+        "kind": "image",
+        "missing": false,
+        "modified": 0,
+        "name": "Image 1",
+        "path": "C:/SyntheticContract/relocated-backup/App Components/Image 1.png",
+        "project_folders": [
+          2
+        ],
+        "project_only": false,
+        "projects": [
+          8
+        ],
+        "rating": null,
+        "source": "Design",
+        "source_url": "",
+        "tags": [
+          1
+        ],
+        "thumbnail": ""
+      },
+      {
+        "added": 1700000000000,
+        "category": "Components / Uncategorised",
+        "category_added": {
+          "All Components": 1794983424894,
+          "Components / Products": 1794983424894,
+          "Illustration": 1794983424876
+        },
+        "component_folders": [
+          "Components / Products"
+        ],
+        "design_folders": [
+          "Illustration"
+        ],
+        "favourites": [
+          8
+        ],
+        "id": 3,
+        "kind": "image",
+        "missing": false,
+        "modified": 0,
+        "name": "Image 2",
+        "path": "C:/SyntheticContract/relocated-backup/App Components/Image 2.png",
+        "project_folders": [
+          2
+        ],
+        "project_only": false,
+        "projects": [
+          8
+        ],
+        "rating": null,
+        "source": "Design",
+        "source_url": "",
+        "tags": [
+          1
+        ],
+        "thumbnail": ""
+      },
+      {
+        "added": 1700000000000,
+        "category": null,
+        "category_added": {},
+        "component_folders": [],
+        "design_folders": [],
+        "favourites": [],
+        "id": 4,
+        "kind": "link",
+        "missing": false,
+        "modified": 0,
+        "name": "Private link",
+        "path": "https://example.test/private",
+        "project_folders": [],
+        "project_only": true,
+        "projects": [
+          8
+        ],
+        "rating": 4,
+        "source": "",
+        "source_url": "",
+        "tags": [],
+        "thumbnail": ""
+      }
+    ],
+    "maintenance_warning": null,
+    "project_folders": [
+      {
+        "id": 1,
+        "name": "Research",
+        "parent_id": null,
+        "position": 0,
+        "project_id": 8
+      },
+      {
+        "id": 2,
+        "name": "References",
+        "parent_id": 1,
+        "position": 0,
+        "project_id": 8
+      }
+    ],
+    "project_overviews": [
+      {
+        "actions": [],
+        "brief": "",
+        "deadline": "",
+        "moodboard": [
+          {
+            "color": "#123456",
+            "height": 200.0,
+            "id": "reference",
+            "item_id": 2,
+            "kind": "reference",
+            "text": "",
+            "width": 200.0,
+            "x": 0.0,
+            "y": 0.0
+          }
+        ],
+        "project_id": 8,
+        "status": "planned"
+      }
+    ],
+    "projects": [
+      {
+        "count": 0,
+        "id": 7,
+        "name": "Unrelated"
+      },
+      {
+        "count": 3,
+        "id": 8,
+        "name": "Contract project"
+      }
+    ],
+    "recent_projects": [],
+    "redo_count": 0,
+    "redo_label": null,
+    "root": "C:/SyntheticContract/relocated-backup/Design Inspo",
+    "scanning": false,
+    "source_paths": [
+      [
+        "Design",
+        "C:/SyntheticContract/relocated-backup/Design Inspo"
+      ]
+    ],
+    "sources": [
+      "Design"
+    ],
+    "studio": [],
+    "tags": [
+      {
+        "count": 2,
+        "id": 1,
+        "name": "Psychology & Wellbeing"
+      },
+      {
+        "count": 0,
+        "id": 2,
+        "name": "School"
+      },
+      {
+        "count": 0,
+        "id": 3,
+        "name": "Sports"
+      }
+    ],
+    "undo_count": 0,
+    "undo_entries": [],
+    "undo_label": null
+  },
+  "preferences": {
+    "colour-history": [
+      {
+        "hex": "#123456",
+        "projects": [
+          "project:8"
+        ]
+      }
+    ],
+    "folder-labels": {
+      "Illustration": "Sketches"
+    },
+    "home-tiles": [
+      {
+        "id": "project:8"
+      }
+    ],
+    "sidebar-width": 305
+  },
+  "rated": {
+    "categories": [
+      "Components / Uncategorised",
+      "Illustration",
+      "Photography"
+    ],
+    "client_records": {
+      "contacts": [],
+      "records": [
+        {
+          "archived": false,
+          "body": "",
+          "date": "",
+          "files": [
+            2
+          ],
+          "id": "note",
+          "kind": "meeting",
+          "people": [],
+          "project_id": 8,
+          "related": [],
+          "status": "",
+          "title": "Contract meeting"
+        }
+      ]
+    },
+    "items": [
+      {
+        "added": 1,
+        "category": null,
+        "category_added": {},
+        "component_folders": [],
+        "design_folders": [],
+        "favourites": [],
+        "id": 1,
+        "kind": "link",
+        "missing": false,
+        "modified": 0,
+        "name": "Unrelated",
+        "path": "https://example.test/unrelated",
+        "project_folders": [],
+        "project_only": false,
+        "projects": [],
+        "rating": null,
+        "source": "",
+        "source_url": "",
+        "tags": [],
+        "thumbnail": ""
+      },
+      {
+        "added": 1700000000000,
+        "category": "",
+        "category_added": {
+          "All Components": 1794983424894,
+          "Components / Products": 1794983424894,
+          "Illustration": 1794983424876
+        },
+        "component_folders": [
+          "Components / Products"
+        ],
+        "design_folders": [
+          "Illustration"
+        ],
+        "favourites": [
+          8
+        ],
+        "id": 2,
+        "kind": "image",
+        "missing": false,
+        "modified": 0,
+        "name": "Image 1",
+        "path": "C:/SyntheticContract/relocated-backup/App Components/Image 1.png",
+        "project_folders": [
+          2
+        ],
+        "project_only": false,
+        "projects": [
+          8
+        ],
+        "rating": null,
+        "source": "Design",
+        "source_url": "",
+        "tags": [
+          1
+        ],
+        "thumbnail": ""
+      },
+      {
+        "added": 1700000000000,
+        "category": "Components / Uncategorised",
+        "category_added": {
+          "All Components": 1794983424894,
+          "Components / Products": 1794983424894,
+          "Illustration": 1794983424876
+        },
+        "component_folders": [
+          "Components / Products"
+        ],
+        "design_folders": [
+          "Illustration"
+        ],
+        "favourites": [
+          8
+        ],
+        "id": 3,
+        "kind": "image",
+        "missing": false,
+        "modified": 0,
+        "name": "Image 2",
+        "path": "C:/SyntheticContract/relocated-backup/App Components/Image 2.png",
+        "project_folders": [
+          2
+        ],
+        "project_only": false,
+        "projects": [
+          8
+        ],
+        "rating": null,
+        "source": "Design",
+        "source_url": "",
+        "tags": [
+          1
+        ],
+        "thumbnail": ""
+      },
+      {
+        "added": 1700000000000,
+        "category": null,
+        "category_added": {},
+        "component_folders": [],
+        "design_folders": [],
+        "favourites": [],
+        "id": 4,
+        "kind": "link",
+        "missing": false,
+        "modified": 0,
+        "name": "Private link",
+        "path": "https://example.test/private",
+        "project_folders": [],
+        "project_only": true,
+        "projects": [
+          8
+        ],
+        "rating": 5,
+        "source": "",
+        "source_url": "",
+        "tags": [],
+        "thumbnail": ""
+      }
+    ],
+    "maintenance_warning": null,
+    "project_folders": [
+      {
+        "id": 1,
+        "name": "Research",
+        "parent_id": null,
+        "position": 0,
+        "project_id": 8
+      },
+      {
+        "id": 2,
+        "name": "References",
+        "parent_id": 1,
+        "position": 0,
+        "project_id": 8
+      }
+    ],
+    "project_overviews": [
+      {
+        "actions": [],
+        "brief": "",
+        "deadline": "",
+        "moodboard": [
+          {
+            "color": "#123456",
+            "height": 200.0,
+            "id": "reference",
+            "item_id": 2,
+            "kind": "reference",
+            "text": "",
+            "width": 200.0,
+            "x": 0.0,
+            "y": 0.0
+          }
+        ],
+        "project_id": 8,
+        "status": "planned"
+      }
+    ],
+    "projects": [
+      {
+        "count": 0,
+        "id": 7,
+        "name": "Unrelated"
+      },
+      {
+        "count": 3,
+        "id": 8,
+        "name": "Contract project"
+      }
+    ],
+    "recent_projects": [],
+    "redo_count": 0,
+    "redo_label": null,
+    "root": "C:/SyntheticContract/relocated-backup/Design Inspo",
+    "scanning": false,
+    "source_paths": [
+      [
+        "Design",
+        "C:/SyntheticContract/relocated-backup/Design Inspo"
+      ]
+    ],
+    "sources": [
+      "Design"
+    ],
+    "studio": [],
+    "tags": [
+      {
+        "count": 2,
+        "id": 1,
+        "name": "Psychology & Wellbeing"
+      },
+      {
+        "count": 0,
+        "id": 2,
+        "name": "School"
+      },
+      {
+        "count": 0,
+        "id": 3,
+        "name": "Sports"
+      }
+    ],
+    "undo_count": 1,
+    "undo_entries": [
+      {
+        "id": 1,
+        "label": "Rate links"
+      }
+    ],
+    "undo_label": "Rate links"
+  },
+  "redone": {
+    "categories": [
+      "Components / Uncategorised",
+      "Illustration",
+      "Photography"
+    ],
+    "client_records": {
+      "contacts": [],
+      "records": [
+        {
+          "archived": false,
+          "body": "",
+          "date": "",
+          "files": [
+            2
+          ],
+          "id": "note",
+          "kind": "meeting",
+          "people": [],
+          "project_id": 8,
+          "related": [],
+          "status": "",
+          "title": "Contract meeting"
+        }
+      ]
+    },
+    "items": [
+      {
+        "added": 1,
+        "category": null,
+        "category_added": {},
+        "component_folders": [],
+        "design_folders": [],
+        "favourites": [],
+        "id": 1,
+        "kind": "link",
+        "missing": false,
+        "modified": 0,
+        "name": "Unrelated",
+        "path": "https://example.test/unrelated",
+        "project_folders": [],
+        "project_only": false,
+        "projects": [],
+        "rating": null,
+        "source": "",
+        "source_url": "",
+        "tags": [],
+        "thumbnail": ""
+      },
+      {
+        "added": 1700000000000,
+        "category": "",
+        "category_added": {
+          "All Components": 1794983424894,
+          "Components / Products": 1794983424894,
+          "Illustration": 1794983424876
+        },
+        "component_folders": [
+          "Components / Products"
+        ],
+        "design_folders": [
+          "Illustration"
+        ],
+        "favourites": [
+          8
+        ],
+        "id": 2,
+        "kind": "image",
+        "missing": false,
+        "modified": 0,
+        "name": "Image 1",
+        "path": "C:/SyntheticContract/relocated-backup/App Components/Image 1.png",
+        "project_folders": [
+          2
+        ],
+        "project_only": false,
+        "projects": [
+          8
+        ],
+        "rating": null,
+        "source": "Design",
+        "source_url": "",
+        "tags": [
+          1
+        ],
+        "thumbnail": ""
+      },
+      {
+        "added": 1700000000000,
+        "category": "Components / Uncategorised",
+        "category_added": {
+          "All Components": 1794983424894,
+          "Components / Products": 1794983424894,
+          "Illustration": 1794983424876
+        },
+        "component_folders": [
+          "Components / Products"
+        ],
+        "design_folders": [
+          "Illustration"
+        ],
+        "favourites": [
+          8
+        ],
+        "id": 3,
+        "kind": "image",
+        "missing": false,
+        "modified": 0,
+        "name": "Image 2",
+        "path": "C:/SyntheticContract/relocated-backup/App Components/Image 2.png",
+        "project_folders": [
+          2
+        ],
+        "project_only": false,
+        "projects": [
+          8
+        ],
+        "rating": null,
+        "source": "Design",
+        "source_url": "",
+        "tags": [
+          1
+        ],
+        "thumbnail": ""
+      },
+      {
+        "added": 1700000000000,
+        "category": null,
+        "category_added": {},
+        "component_folders": [],
+        "design_folders": [],
+        "favourites": [],
+        "id": 4,
+        "kind": "link",
+        "missing": false,
+        "modified": 0,
+        "name": "Private link",
+        "path": "https://example.test/private",
+        "project_folders": [],
+        "project_only": true,
+        "projects": [
+          8
+        ],
+        "rating": 5,
+        "source": "",
+        "source_url": "",
+        "tags": [],
+        "thumbnail": ""
+      }
+    ],
+    "maintenance_warning": null,
+    "project_folders": [
+      {
+        "id": 1,
+        "name": "Research",
+        "parent_id": null,
+        "position": 0,
+        "project_id": 8
+      },
+      {
+        "id": 2,
+        "name": "References",
+        "parent_id": 1,
+        "position": 0,
+        "project_id": 8
+      }
+    ],
+    "project_overviews": [
+      {
+        "actions": [],
+        "brief": "",
+        "deadline": "",
+        "moodboard": [
+          {
+            "color": "#123456",
+            "height": 200.0,
+            "id": "reference",
+            "item_id": 2,
+            "kind": "reference",
+            "text": "",
+            "width": 200.0,
+            "x": 0.0,
+            "y": 0.0
+          }
+        ],
+        "project_id": 8,
+        "status": "planned"
+      }
+    ],
+    "projects": [
+      {
+        "count": 0,
+        "id": 7,
+        "name": "Unrelated"
+      },
+      {
+        "count": 3,
+        "id": 8,
+        "name": "Contract project"
+      }
+    ],
+    "recent_projects": [],
+    "redo_count": 0,
+    "redo_label": null,
+    "root": "C:/SyntheticContract/relocated-backup/Design Inspo",
+    "scanning": false,
+    "source_paths": [
+      [
+        "Design",
+        "C:/SyntheticContract/relocated-backup/Design Inspo"
+      ]
+    ],
+    "sources": [
+      "Design"
+    ],
+    "studio": [],
+    "tags": [
+      {
+        "count": 2,
+        "id": 1,
+        "name": "Psychology & Wellbeing"
+      },
+      {
+        "count": 0,
+        "id": 2,
+        "name": "School"
+      },
+      {
+        "count": 0,
+        "id": 3,
+        "name": "Sports"
+      }
+    ],
+    "undo_count": 1,
+    "undo_entries": [
+      {
+        "id": 1,
+        "label": "Rate links"
+      }
+    ],
+    "undo_label": "Rate links"
+  },
+  "undone": {
+    "categories": [
+      "Components / Uncategorised",
+      "Illustration",
+      "Photography"
+    ],
+    "client_records": {
+      "contacts": [],
+      "records": [
+        {
+          "archived": false,
+          "body": "",
+          "date": "",
+          "files": [
+            2
+          ],
+          "id": "note",
+          "kind": "meeting",
+          "people": [],
+          "project_id": 8,
+          "related": [],
+          "status": "",
+          "title": "Contract meeting"
+        }
+      ]
+    },
+    "items": [
+      {
+        "added": 1,
+        "category": null,
+        "category_added": {},
+        "component_folders": [],
+        "design_folders": [],
+        "favourites": [],
+        "id": 1,
+        "kind": "link",
+        "missing": false,
+        "modified": 0,
+        "name": "Unrelated",
+        "path": "https://example.test/unrelated",
+        "project_folders": [],
+        "project_only": false,
+        "projects": [],
+        "rating": null,
+        "source": "",
+        "source_url": "",
+        "tags": [],
+        "thumbnail": ""
+      },
+      {
+        "added": 1700000000000,
+        "category": "",
+        "category_added": {
+          "All Components": 1794983424894,
+          "Components / Products": 1794983424894,
+          "Illustration": 1794983424876
+        },
+        "component_folders": [
+          "Components / Products"
+        ],
+        "design_folders": [
+          "Illustration"
+        ],
+        "favourites": [
+          8
+        ],
+        "id": 2,
+        "kind": "image",
+        "missing": false,
+        "modified": 0,
+        "name": "Image 1",
+        "path": "C:/SyntheticContract/relocated-backup/App Components/Image 1.png",
+        "project_folders": [
+          2
+        ],
+        "project_only": false,
+        "projects": [
+          8
+        ],
+        "rating": null,
+        "source": "Design",
+        "source_url": "",
+        "tags": [
+          1
+        ],
+        "thumbnail": ""
+      },
+      {
+        "added": 1700000000000,
+        "category": "Components / Uncategorised",
+        "category_added": {
+          "All Components": 1794983424894,
+          "Components / Products": 1794983424894,
+          "Illustration": 1794983424876
+        },
+        "component_folders": [
+          "Components / Products"
+        ],
+        "design_folders": [
+          "Illustration"
+        ],
+        "favourites": [
+          8
+        ],
+        "id": 3,
+        "kind": "image",
+        "missing": false,
+        "modified": 0,
+        "name": "Image 2",
+        "path": "C:/SyntheticContract/relocated-backup/App Components/Image 2.png",
+        "project_folders": [
+          2
+        ],
+        "project_only": false,
+        "projects": [
+          8
+        ],
+        "rating": null,
+        "source": "Design",
+        "source_url": "",
+        "tags": [
+          1
+        ],
+        "thumbnail": ""
+      },
+      {
+        "added": 1700000000000,
+        "category": null,
+        "category_added": {},
+        "component_folders": [],
+        "design_folders": [],
+        "favourites": [],
+        "id": 4,
+        "kind": "link",
+        "missing": false,
+        "modified": 0,
+        "name": "Private link",
+        "path": "https://example.test/private",
+        "project_folders": [],
+        "project_only": true,
+        "projects": [
+          8
+        ],
+        "rating": 4,
+        "source": "",
+        "source_url": "",
+        "tags": [],
+        "thumbnail": ""
+      }
+    ],
+    "maintenance_warning": null,
+    "project_folders": [
+      {
+        "id": 1,
+        "name": "Research",
+        "parent_id": null,
+        "position": 0,
+        "project_id": 8
+      },
+      {
+        "id": 2,
+        "name": "References",
+        "parent_id": 1,
+        "position": 0,
+        "project_id": 8
+      }
+    ],
+    "project_overviews": [
+      {
+        "actions": [],
+        "brief": "",
+        "deadline": "",
+        "moodboard": [
+          {
+            "color": "#123456",
+            "height": 200.0,
+            "id": "reference",
+            "item_id": 2,
+            "kind": "reference",
+            "text": "",
+            "width": 200.0,
+            "x": 0.0,
+            "y": 0.0
+          }
+        ],
+        "project_id": 8,
+        "status": "planned"
+      }
+    ],
+    "projects": [
+      {
+        "count": 0,
+        "id": 7,
+        "name": "Unrelated"
+      },
+      {
+        "count": 3,
+        "id": 8,
+        "name": "Contract project"
+      }
+    ],
+    "recent_projects": [],
+    "redo_count": 1,
+    "redo_label": "Rate links",
+    "root": "C:/SyntheticContract/relocated-backup/Design Inspo",
+    "scanning": false,
+    "source_paths": [
+      [
+        "Design",
+        "C:/SyntheticContract/relocated-backup/Design Inspo"
+      ]
+    ],
+    "sources": [
+      "Design"
+    ],
+    "studio": [],
+    "tags": [
+      {
+        "count": 2,
+        "id": 1,
+        "name": "Psychology & Wellbeing"
+      },
+      {
+        "count": 0,
+        "id": 2,
+        "name": "School"
+      },
+      {
+        "count": 0,
+        "id": 3,
+        "name": "Sports"
+      }
+    ],
+    "undo_count": 0,
+    "undo_entries": [],
+    "undo_label": null
+  }
+}

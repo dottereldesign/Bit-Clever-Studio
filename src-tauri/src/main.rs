@@ -768,3 +768,6 @@ mod batch_regression_tests;
 
 #[cfg(test)]
 mod performance_tests;
+
+#[cfg(test)]
+mod recovery_contract_tests;
