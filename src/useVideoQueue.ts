@@ -7,7 +7,7 @@ import { enqueueVideos, persistVideoQueue, restoreVideoQueue, videoRequests, typ
 export default function useVideoQueue(enabled: boolean, saved: () => Promise<unknown>, report: (error:unknown)=>void) {
   const storageKey = 'video-download-queue-v2:' + localStorage.getItem('active-library-root');
   const [jobs,setJobs]=useState<VideoJob[]>(()=>{try{return restoreVideoQueue(localStorage.getItem(storageKey));}catch{return [];}});
-  const jobsRef=useRef(jobs), running=useRef<string|null>(null), persisted=useRef('');
+  const jobsRef=useRef(jobs), running=useRef<string|null>(null), attempt=useRef<string|null>(null), persisted=useRef('');
   const savedRef=useRef(saved), reportRef=useRef(report);
   savedRef.current=saved;reportRef.current=report;
   const change=useCallback((update:(jobs:VideoJob[])=>VideoJob[])=>{
@@ -22,18 +22,19 @@ export default function useVideoQueue(enabled: boolean, saved: () => Promise<unk
     if(!enabled || running.current)return;
     const next=jobsRef.current.find(job=>job.status==='queued');if(!next)return;
     running.current=next.id;
+    const jobId=crypto.randomUUID();attempt.current=jobId;
     change(jobs=>jobs.map(job=>job.id===next.id?{...job,status:'active',started:Date.now(),error:undefined,progress:undefined,cancelling:false}:job));
     const onProgress=new Channel<VideoProgress>();
-    onProgress.onmessage=progress=>change(jobs=>jobs.map(job=>job.id===next.id&&job.status==='active'?{...job,progress}:job));
+    onProgress.onmessage=progress=>{if(attempt.current===jobId)change(jobs=>jobs.map(job=>job.id===next.id&&job.status==='active'?{...job,progress}:job));};
     void (async()=>{
       try {
-        const result=await invoke<{id:number;reused:boolean}>("download_video",{input:{url:next.url,projects:next.projects,tags:next.tags},onProgress});
+        const result=await invoke<{id:number;reused:boolean}>("download_video",{jobId,input:{url:next.url,projects:next.projects,tags:next.tags},onProgress});
         change(jobs=>jobs.map(job=>job.id===next.id?{...job,status:'done',reused:result.reused,cancelling:false,progress:undefined}:job));
         try{await savedRef.current();}catch(error){reportRef.current(error);}
       }catch(error){
-        change(jobs=>jobs.map(job=>job.id===next.id?{...job,status:job.cancelling?'cancelled':'error',error:job.cancelling?undefined:String(error),progress:undefined,cancelling:false}:job));
+        change(jobs=>jobs.map(job=>job.id===next.id?{...job,status:String(error)==='Download cancelled.'?'cancelled':'error',error:String(error)==='Download cancelled.'?undefined:String(error),progress:undefined,cancelling:false}:job));
       }finally{
-        running.current=null;
+        running.current=null;attempt.current=null;
         // A new state reference wakes the FIFO worker even after an immediate error.
         change(jobs=>[...jobs]);
       }
@@ -47,9 +48,11 @@ export default function useVideoQueue(enabled: boolean, saved: () => Promise<unk
   const cancel=useCallback((id:string)=>{
     const job=jobsRef.current.find(job=>job.id===id);if(!job || job.cancelling)return;
     if(job.status==='queued'){change(jobs=>jobs.map(job=>job.id===id?{...job,status:'cancelled'}:job));return;}
-    if(job.status!=='active')return;
+    if(job.status!=='active'||running.current!==id||!attempt.current)return;
+    const jobId=attempt.current;
     change(jobs=>jobs.map(job=>job.id===id?{...job,cancelling:true,error:undefined}:job));
-    void invoke("cancel_video_download").catch(error=>{
+    void invoke("cancel_video_download",{jobId}).catch(error=>{
+      if(attempt.current!==jobId)return;
       change(jobs=>jobs.map(job=>job.id===id&&job.status==='active'?{...job,cancelling:false,error:String(error)}:job));
     });
   },[change]);

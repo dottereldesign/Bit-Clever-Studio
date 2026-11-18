@@ -22,6 +22,16 @@ Metadata imports into managed libraries and capture-file imports journal newly c
 
 A changed or newly referenced provisional copy, or an unavailable parent folder, stops automatic cleanup and preserves the remaining journal and files. Restore availability or resolve the conflict before retrying. Normal metadata/capture errors also attempt reconciliation immediately. A forced exit during copying, before a verified copy can be journalled, may still leave an unidentified temporary file; these files are not automatically deleted. This does not remove the original or commit partial metadata.
 
+## Downloads and cancellation
+
+Downloaded videos now use the provisional-copy journal while saving. Copy bytes are verified and synced before publication; metadata commit clears the journal atomically. Recovery removes an unchanged, unreferenced provisional copy, while a committed video remains available. Retrying the same URL reuses the saved video and applies requested project/tag assignments.
+
+Cancellation is scoped to a unique attempt token, including retries, so a delayed request cannot cancel the next attempt. The native save path checks cancellation before publication and commit. Once the transaction commits, success wins over a late cancellation. Other save errors are not reported as successful cancellation.
+
+After restart, an interrupted active job becomes an error with a Retry explanation instead of automatically starting network work. This also applies when cancellation was pending: the app cannot assume an unacknowledged cancellation succeeded. Explicit Retry checks for an already-saved video first. Waiting queued jobs retain their existing FIFO behaviour and library isolation.
+
+Tests cover publication/commit process exits, safe retries and assignments, cancellation at save boundaries, late-token isolation, and stopping an isolated running child with partial staging cleanup. They do not use public video services. Abrupt termination of the entire app/downloader process tree during network transfer, orphaned staging cleanup after such termination, real-service authentication/retries, and power loss remain separate acceptance work.
+
 ## If recovery needs attention
 
 The library can open with a recovery warning if a pending location is unavailable. Reconnect the drive, then use **Rescan library** or retry the interrupted operation. A conflict warning means different content was found: preserve both locations and resolve the conflict before retrying. The pending move is not discarded. Recovery warnings are visible on Home and the other main views, and clear after a successful recovered snapshot arrives.

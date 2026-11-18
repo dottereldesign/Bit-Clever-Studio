@@ -42,7 +42,14 @@ try{
   assert(calls.length===1,'Returning to B replayed a job');
   applyBackupPreferences(backup);
   assert(localStorage.getItem('sidebar-hidden-sections')==='["Marketing"]','Backup visibility restore failed');
-  assert(errors.length===0,'Queue reported errors');root.unmount();
-  document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks:['A→B→A→B preference isolation and restore','Only the originating library resumes its queue; legacy jobs remain paused','Foreign queues remain unchanged; completion persists'],downloads:calls.length});
+  root.unmount();
+  for(const cancelling of [false,true]){
+    localStorage.setItem('video-download-queue-v2:library-B',JSON.stringify([{...job,status:'active',cancelling}]));
+    const count=calls.length;await mount();assert(calls.length===count,'Interrupted job auto-restarted');
+    assert(state.jobs[0].status==='error'&&state.jobs[0].error.includes('nterrupted'),'Interrupted state explains Retry');
+    state.retry(job.id);await until(()=>state.jobs[0].status==='done','Explicit retry completes');assert(calls.length===count+1,'Retry starts once');root.unmount();
+  }
+  assert(errors.length===0,'Queue reported errors');
+  document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks:['A→B→A→B preference isolation and restore','Only the originating library resumes its queue; legacy jobs remain paused','Foreign queues remain unchanged; completion persists','Interrupted downloads and cancellation wait for explicit Retry'],downloads:calls.length});
 }catch(error){document.getElementById('check-result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack});}
 </script></body></html>

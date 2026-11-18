@@ -94,6 +94,15 @@ fn crash_worker() {
         "organise" => managed_library::organise(&path).unwrap(),
         "import" => db::import(&path, root.join("incoming.json")).unwrap(),
         "capture" => {content::capture(&path,capture_input(&root)).unwrap();},
+        "download"|"download_cancel" => {
+            let result=crate::download::import_cancelled(&path,&root,&root.parent().unwrap().join("download.mp4"),"Downloaded",&download_request(),&std::sync::atomic::AtomicBool::new(false));
+            if std::env::var("DESIGN_TEST_OPERATION").unwrap()=="download_cancel" {
+                let committed=std::env::var("DESIGN_TEST_CRASH_POINT").unwrap()=="download.after_commit";
+                assert_eq!(result.is_ok(),committed);if !committed{assert_eq!(result.err().unwrap(),"Download cancelled.");}
+                assert_eq!(import_pending(&path),0);assert_eq!(db::load(&path,false).unwrap().items.len(),if committed{3}else{2});std::process::exit(86);
+            }
+            result.unwrap();
+        },
         _ => panic!("Unknown fixture operation"),
     }
     panic!("Crash checkpoint not reached");
@@ -424,4 +433,26 @@ fn failed_capture_keeps_original_and_removes_only_its_provisional_copy() {
     assert_eq!(fs::read_dir(&destination).unwrap().count(),0);assert_eq!(fs::read(&original).unwrap(),bytes);
     assert_eq!(db::load(&path,false).unwrap().items.len(),2);
     content::capture(&path,capture_input(&root)).unwrap();assert_eq!(db::load(&path,false).unwrap().items.len(),3);
+}
+
+fn download_request()->crate::download::Request {crate::download::Request{url:"https://example.test/video".into(),projects:vec![1],tags:vec![]}}
+#[test]
+fn interrupted_download_publication_rolls_back_or_retains_commit_and_retry_reuses_video(){
+ for point in ["download.after_copy_intent","download.after_publish","download.before_commit","download.after_commit"] {
+  let (temp,path,root)=fixture();let source=temp.path().join("download.mp4");fs::write(&source,b"Synthetic video bytes").unwrap();
+  crash(&path,&root,"download",point);file_moves::reconcile(&path).unwrap();
+  let first=crate::download::import(&path,&root,&source,"Downloaded",&download_request()).unwrap();
+  let second=crate::download::import(&path,&root,&source,"Downloaded",&download_request()).unwrap();assert!(second.reused);assert_eq!(first.id,second.id);
+  let lib=db::load(&path,false).unwrap();assert_eq!(lib.items.len(),3);assert!(lib.items.iter().find(|i|i.id==first.id).unwrap().projects.contains(&1));
+  assert_eq!(fs::read_dir(root.join("Downloads")).unwrap().count(),1);assert_eq!(import_pending(&path),0);assert_eq!(fs::read(source).unwrap(),b"Synthetic video bytes");
+ }
+}
+#[test]
+fn cancellation_before_commit_rolls_back_and_after_commit_reports_success(){
+ for point in ["download.after_copy_intent","download.after_publish","download.before_commit","download.after_commit"] {
+  let (temp,path,root)=fixture();let source=temp.path().join("download.mp4");fs::write(&source,b"Synthetic video bytes").unwrap();
+  crash(&path,&root,"download_cancel",point);
+  assert_eq!(fs::read_dir(root.join("Downloads")).unwrap().count(),if point=="download.after_commit"{1}else{0});
+  assert_eq!(fs::read(source).unwrap(),b"Synthetic video bytes");
+ }
 }

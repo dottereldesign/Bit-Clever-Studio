@@ -50,7 +50,7 @@ struct State {
     ffmpeg: PathBuf,
     downloader: PathBuf,
     downloading: Arc<AtomicBool>,
-    download_cancel: Arc<AtomicBool>,
+    download_cancel: Arc<download::Cancellation>,
     scanning: Arc<AtomicBool>,
     media_slots: Arc<tokio::sync::Semaphore>,
     content_lock: Arc<std::sync::Mutex<()>>,
@@ -386,19 +386,21 @@ async fn replace_thumbnail(id: i64, file: content::CaptureFile, state: tauri::St
     }).await.map_err(err)?
 }
 #[tauri::command]
-async fn download_video(input: download::Request, on_progress: tauri::ipc::Channel<download::Progress>, app: tauri::AppHandle, state: tauri::State<'_, State>) -> Result<download::Saved> {
+async fn download_video(job_id:String, input: download::Request, on_progress: tauri::ipc::Channel<download::Progress>, app: tauri::AppHandle, state: tauri::State<'_, State>) -> Result<download::Saved> {
     let s=state.inner().clone();
     if s.downloading.compare_exchange(false,true,Ordering::SeqCst,Ordering::SeqCst).is_err() { return Err("A video is already downloading.".into()); }
-    s.download_cancel.store(false,Ordering::SeqCst);
+    let cancelled=match s.download_cancel.start(job_id.clone()){Ok(flag)=>flag,Err(error)=>{s.downloading.store(false,Ordering::SeqCst);return Err(error);}};
+    let cancellation=s.download_cancel.clone();
     let active=s.downloading.clone();
-    let result=tauri::async_runtime::spawn_blocking(move||{let saved=download::run_locked(&s.db,&s.downloader,&s.ffmpeg,input,&s.download_cancel,&mut |progress|{let _=on_progress.send(progress);},&s.content_lock)?;let _guard=s.content_lock.lock().map_err(err)?;managed_library::after_commit(&s.db,true);Ok::<_,String>(saved)}).await.map_err(err);
+    let result=tauri::async_runtime::spawn_blocking(move||{let saved=download::run_locked(&s.db,&s.downloader,&s.ffmpeg,input,&cancelled,&mut |progress|{let _=on_progress.send(progress);},&s.content_lock)?;let _guard=s.content_lock.lock().map_err(err)?;managed_library::after_commit(&s.db,true);Ok::<_,String>(saved)}).await.map_err(err);
+    cancellation.finish(&job_id);
     active.store(false,Ordering::SeqCst);
     let saved=result??;
     let _=app.emit("library-changed",());
     Ok(saved)
 }
 #[tauri::command]
-fn cancel_video_download(state: tauri::State<'_,State>) { state.download_cancel.store(true,Ordering::SeqCst); }
+fn cancel_video_download(job_id:String,state: tauri::State<'_,State>)->Result<()> { state.download_cancel.cancel(&job_id) }
 #[tauri::command]
 async fn read_clipboard(diagnostic_operation:Option<String>,app: tauri::AppHandle, state: tauri::State<'_, State>) -> Result<content::ClipboardContent> {
     let data = state.db.parent().unwrap().to_path_buf();
@@ -646,7 +648,7 @@ fn main() {
                 cache,
                 downloader: app.path().resource_dir()?.join("binaries").join("yt-dlp.exe"),
                 downloading: Arc::new(AtomicBool::new(false)),
-                download_cancel: Arc::new(AtomicBool::new(false)),
+                download_cancel: Arc::new(download::Cancellation::default()),
                 ffmpeg,
                 scanning: Arc::new(AtomicBool::new(false)),
                 media_slots: Arc::new(tokio::sync::Semaphore::new(3)),

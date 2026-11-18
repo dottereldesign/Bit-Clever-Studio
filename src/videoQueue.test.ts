@@ -30,8 +30,8 @@ describe('video queue',()=>{
     const failed:VideoJob={...jobs[1],id:'failed',status:'error',error:'Private video'};
     const text=persistVideoQueue([...jobs,failed]);
     equal(text.includes('progress'),false);equal(text.includes('cancelling'),false);
-    const restored=restoreVideoQueue(text);equal(restored.map(j=>j.status),['queued','queued','error']);equal(restored[0].projects,[7]);equal(restored[2].error,'Private video');
-    equal(restoreVideoQueue(persistVideoQueue([{...jobs[0],cancelling:true}]))[0].status,'cancelled');
+    const restored=restoreVideoQueue(text);equal(restored.map(j=>j.status),['error','queued','error']);equal(restored[0].projects,[7]);equal(restored[0].error,'Download interrupted. Retry to continue.');equal(restored[2].error,'Private video');
+    equal(restoreVideoQueue(persistVideoQueue([{...jobs[0],cancelling:true}]))[0].status,'error');
     equal(restoreVideoQueue('broken JSON'),[]);equal(restoreVideoQueue('{"status":"queued"}'),[]);
     equal(restoreVideoQueue(JSON.stringify([{...jobs[0],url:'javascript:bad()'}])),[]);
   });
