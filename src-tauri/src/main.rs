@@ -6,8 +6,14 @@ mod website_capture;
 mod storage;
 mod clipboard;
 mod content;
+mod file_moves;
+mod import_copies;
 mod db;
+mod import_references;
+mod timestamps;
 mod download;
+mod download_process;
+mod download_staging;
 mod library;
 mod resources;
 mod sources;
@@ -25,6 +31,7 @@ mod branding;
 mod calendar_sync;
 mod library_export;
 mod managed_library;
+mod library_creation;
 use db::{err, Result};
 use notify::Watcher;
 use std::{
@@ -46,7 +53,7 @@ struct State {
     ffmpeg: PathBuf,
     downloader: PathBuf,
     downloading: Arc<AtomicBool>,
-    download_cancel: Arc<AtomicBool>,
+    download_cancel: Arc<download::Cancellation>,
     scanning: Arc<AtomicBool>,
     media_slots: Arc<tokio::sync::Semaphore>,
     content_lock: Arc<std::sync::Mutex<()>>,
@@ -196,7 +203,7 @@ async fn update(change: db::Change, diagnostic_operation:Option<String>, state: 
         let _guard=s.content_lock.lock().map_err(err)?;log("native.lock_wait","success",start.elapsed().as_secs_f64()*1000.);
         diagnostics::phase(&operation,"native.database_change",||db::change(&s.db,change))?;
         if !organise_files {log("native.organise_files_skipped","success",0.);return Ok(());}
-        diagnostics::phase(&operation,"native.organise_files",||managed_library::organise(&s.db))
+        managed_library::after_commit(&s.db,true);Ok(())
     })
         .await
         .map_err(err)?
@@ -236,7 +243,7 @@ fn scan_background(app: tauri::AppHandle, s: State) {
     diagnostics::phase_event(&operation,"native.scan","started",0.,serde_json::json!({}));
     let _ = app.emit("scan-started", ());
     tauri::async_runtime::spawn_blocking(move || {
-        let result = (|| {let _guard=diagnostics::phase(&operation,"native.scan_lock_wait",||s.content_lock.lock().map_err(err))?;diagnostics::phase(&operation,"native.scan_files",||library::scan_all(&s.db))?;diagnostics::phase(&operation,"native.scan_organise",||managed_library::organise(&s.db))})();
+        let result = (|| {let _guard=diagnostics::phase(&operation,"native.scan_lock_wait",||s.content_lock.lock().map_err(err))?;diagnostics::phase(&operation,"native.scan_files",||library::scan_all(&s.db))?;diagnostics::phase(&operation,"native.scan_organise",||managed_library::organise(&s.db))?;db::set_setting(&db::connect(&s.db)?,"maintenance_warning","")})();
         diagnostics::phase_event(&operation,"native.scan",if result.is_ok(){"success"}else{"error"},scan_start.elapsed().as_secs_f64()*1000.,serde_json::json!({}));
         s.scanning.store(false, Ordering::SeqCst);
         match result {
@@ -304,7 +311,7 @@ async fn backup(
         if restore {
             let source=PathBuf::from(path);
             if let Some(parent)=source.parent(){let folder=if parent.file_name().is_some_and(|n|n=="Library Data"){parent.parent().unwrap()}else{parent};if library_export::manifest_path(folder).exists(){library_export::verify(folder)?;}}
-            db::import(&db, source)?;managed_library::organise(&db)
+            db::import(&db, source)?;managed_library::after_commit(&db,true);Ok(())
         } else {
             db::export(&db, PathBuf::from(path))
         }
@@ -345,7 +352,7 @@ async fn perform_capture(input:content::Capture,on_progress:Option<tauri::ipc::C
         let mut send=|p|{if let Some(channel)=&on_progress{let _=channel.send(p);}};
         let result=content::capture_with_progress(&s.db, input,&mut send)?;
         let mut finishing=content::DuplicateProgress::waiting();finishing.phase="finishing";send(finishing);
-        managed_library::organise(&s.db)?;Ok(result)
+        managed_library::after_commit(&s.db,true);Ok(result)
     })
     .await
     .map_err(err)?
@@ -378,23 +385,25 @@ async fn replace_thumbnail(id: i64, file: content::CaptureFile, state: tauri::St
     let s = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = s.content_lock.lock().map_err(err)?;
-        thumbnail::replace(&s.db,id,&file)?;managed_library::refresh_browser(&s.db)
+        thumbnail::replace(&s.db,id,&file)?;managed_library::after_commit(&s.db,false);Ok(())
     }).await.map_err(err)?
 }
 #[tauri::command]
-async fn download_video(input: download::Request, on_progress: tauri::ipc::Channel<download::Progress>, app: tauri::AppHandle, state: tauri::State<'_, State>) -> Result<download::Saved> {
+async fn download_video(job_id:String, input: download::Request, on_progress: tauri::ipc::Channel<download::Progress>, app: tauri::AppHandle, state: tauri::State<'_, State>) -> Result<download::Saved> {
     let s=state.inner().clone();
     if s.downloading.compare_exchange(false,true,Ordering::SeqCst,Ordering::SeqCst).is_err() { return Err("A video is already downloading.".into()); }
-    s.download_cancel.store(false,Ordering::SeqCst);
+    let cancelled=match s.download_cancel.start(job_id.clone()){Ok(flag)=>flag,Err(error)=>{s.downloading.store(false,Ordering::SeqCst);return Err(error);}};
+    let cancellation=s.download_cancel.clone();
     let active=s.downloading.clone();
-    let result=tauri::async_runtime::spawn_blocking(move||{let _guard=s.content_lock.lock().map_err(err)?;let saved=download::run(&s.db,&s.downloader,&s.ffmpeg,input,&s.download_cancel,&mut |progress|{let _=on_progress.send(progress);})?;managed_library::organise(&s.db)?;Ok::<_,String>(saved)}).await.map_err(err);
+    let result=tauri::async_runtime::spawn_blocking(move||{let saved=download::run_locked(&s.db,&s.downloader,&s.ffmpeg,input,&cancelled,&mut |progress|{let _=on_progress.send(progress);},&s.content_lock)?;let _guard=s.content_lock.lock().map_err(err)?;managed_library::after_commit(&s.db,true);Ok::<_,String>(saved)}).await.map_err(err);
+    cancellation.finish(&job_id);
     active.store(false,Ordering::SeqCst);
     let saved=result??;
     let _=app.emit("library-changed",());
     Ok(saved)
 }
 #[tauri::command]
-fn cancel_video_download(state: tauri::State<'_,State>) { state.download_cancel.store(true,Ordering::SeqCst); }
+fn cancel_video_download(job_id:String,state: tauri::State<'_,State>)->Result<()> { state.download_cancel.cancel(&job_id) }
 #[tauri::command]
 async fn read_clipboard(diagnostic_operation:Option<String>,app: tauri::AppHandle, state: tauri::State<'_, State>) -> Result<content::ClipboardContent> {
     let data = state.db.parent().unwrap().to_path_buf();
@@ -583,6 +592,7 @@ async fn calendar_select(meetings:Vec<calendar_sync::Meeting>,generation:String,
 async fn calendar_apply(meetings:Vec<calendar_sync::Meeting>,generation:String,app:tauri::AppHandle,state:tauri::State<'_,State>)->Result<calendar_sync::Status>{let s=state.inner().clone();let folder=app.state::<LibraryLocation>().config.clone();tauri::async_runtime::spawn_blocking(move||{let _guard=s.content_lock.lock().map_err(err)?;calendar_sync::apply(&folder,&s.db,meetings,&generation)?;let _=app.emit("library-changed",());calendar_sync::status(&folder,&s.db)}).await.map_err(err)?}
 
 fn main() {
+    download_process::worker_entry();
     tauri::Builder::default()
         .manage(website_capture::Jobs::default())
         .plugin(tauri_plugin_dialog::init())
@@ -602,6 +612,8 @@ fn main() {
             let library_data=db_path.parent().unwrap().to_path_buf();
             let schema_start=std::time::Instant::now();diagnostics::event("library.schema","started",0.,serde_json::json!({}));
             let schema_result=db::init(&db_path);diagnostics::event("library.schema",if schema_result.is_ok(){"success"}else{"error"},schema_start.elapsed().as_secs_f64()*1000.,serde_json::json!({}));schema_result?;
+            file_moves::recover_on_startup(&db_path)?;
+            if download_staging::cleanup(&db_path).is_err(){diagnostics::event("download.staging_recovery","error",0.,serde_json::json!({"error_code":"staging_unavailable"}));}
             let db = db::connect(&db_path)?;
             if managed_library::root(&db_path)?.is_none(){resources::seed(&db)?;}
             if db::setting(&db, "root").is_none() {
@@ -641,7 +653,7 @@ fn main() {
                 cache,
                 downloader: app.path().resource_dir()?.join("binaries").join("yt-dlp.exe"),
                 downloading: Arc::new(AtomicBool::new(false)),
-                download_cancel: Arc::new(AtomicBool::new(false)),
+                download_cancel: Arc::new(download::Cancellation::default()),
                 ffmpeg,
                 scanning: Arc::new(AtomicBool::new(false)),
                 media_slots: Arc::new(tokio::sync::Semaphore::new(3)),
@@ -762,3 +774,18 @@ fn main() {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod batch_regression_tests;
+
+#[cfg(test)]
+mod performance_tests;
+
+#[cfg(test)]
+mod recovery_contract_tests;
+
+#[cfg(test)]
+mod interruption_tests;
+
+#[cfg(test)]
+mod full_recovery_tests;

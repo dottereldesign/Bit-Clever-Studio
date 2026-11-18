@@ -124,6 +124,9 @@ pub fn verify(folder:&Path)->Result<Verification>{
 }
 
 pub fn restore_preferences(folder:&Path, db_path:&Path)->Result<serde_json::Value>{
+    restore_preferences_to(folder,db_path,db_path.parent().ok_or("Missing data folder")?)
+}
+pub fn restore_preferences_to(folder:&Path, db_path:&Path,data:&Path)->Result<serde_json::Value>{
     let file=preferences_path(folder);
     if !file.exists(){return Ok(serde_json::json!({}));}
     let mut value:serde_json::Value=serde_json::from_slice(&fs::read(file).map_err(err)?).map_err(err)?;
@@ -160,7 +163,7 @@ pub fn restore_preferences(folder:&Path, db_path:&Path)->Result<serde_json::Valu
             ids.retain(|id|id.as_str().and_then(|s|s.strip_prefix("project:")).is_some_and(|id|projects.contains_key(id)));
         }}
     }
-    rewrite(&mut value,folder,db_path.parent().ok_or("Missing app data folder")?,&projects)?;
+    rewrite(&mut value,folder,data,&projects)?;
     Ok(value)
 }
 
@@ -195,6 +198,7 @@ pub fn export(db_path: &Path, destination: &Path, name: &str, cancel: &AtomicBoo
 }
 
 pub fn export_with_preferences(db_path: &Path, destination: &Path, name: &str, mut preferences: serde_json::Value, cancel: &AtomicBool, progress: &mut impl FnMut(Progress)) -> Result<ExportResult> {
+    crate::file_moves::reconcile(db_path)?;
     let destination=destination.canonicalize().map_err(err)?;
     if !destination.is_dir() {return Err("Choose a backup folder.".into());}
     let conn=db::connect(db_path)?;
@@ -217,7 +221,7 @@ fn run(conn: &rusqlite::Connection, output: &Path, data: &Path, preferences: &mu
     progress(status.clone());
     // SQLite's backup API takes a consistent snapshot, including live WAL data.
     let snapshot=output.join("metadata.snapshot.sqlite");
-    conn.backup("main",&snapshot,None).map_err(err)?;
+    conn.backup("main",&snapshot,None::<fn(rusqlite::backup::Progress)>).map_err(err)?;
     let mut library=db::load(&snapshot,false)?;
     let client_events=crate::clients::events(&db::connect(&snapshot)?,None,None,-1)?;
     for suffix in ["", "-wal", "-shm"] {let path=output.join(format!("metadata.snapshot.sqlite{suffix}"));if path.exists(){fs::remove_file(path).map_err(err)?;}}
@@ -309,7 +313,7 @@ fn run(conn: &rusqlite::Connection, output: &Path, data: &Path, preferences: &mu
     fs::write(output.join("Library Data/links.csv"),table).map_err(err)?;
 
     write_browser(output,&library,preferences)?;
-    fs::write(output.join("Read Me.txt"),"BIT CLEVER LIBRARY BACKUP\n\nDesign Inspo/ and App Components/ contain originals, stored once per item. General/ holds other collections. Appearance/ holds custom images. Library Data/ preserves every folder membership, project, tag, saved link and setting.\n\nOpen Browse Library.html to browse offline. In Bit Clever, choose Storage > Open Existing Library to use this folder separately, or Merge Backup to add it to your current library.\n\nCopy this ENTIRE folder to an external drive and Verify Backup on that copy. INCOMPLETE.txt means the backup did not finish. Review unavailable files before relying on a backup. Removed items, undo history, browser sessions and caches are excluded. Keep another copy on a separate drive or location.\n").map_err(err)?;
+    fs::write(output.join("Read Me.txt"),"BIT CLEVER LIBRARY BACKUP\n\nDesign Inspo/ and App Components/ contain originals, stored once per item. General/ holds other collections. Appearance/ holds custom images. Library Data/ preserves folder memberships, projects and notes, tags, ratings, saved links, library clients/leads and activity, and saved appearance preferences including Home tiles.\n\nOpen Browse Library.html to browse offline. In Bit Clever, choose Storage > Open Existing Library to use this folder separately, or Merge Backup to add it to your current library.\n\nCopy this ENTIRE folder to an external drive and Verify Backup on that copy. INCOMPLETE.txt means the backup did not finish. Review unavailable files before relying on a backup. My Business data (the separate device-private database), account/calendar credentials, unfinished drafts, download queues, removed items, duplicate-recovery files, browser sessions and caches are excluded. Undo/Redo history is not restored. Keep a separate backup of My Business data. Missing originals cannot be recovered from this export. Verify Backup checks file integrity; it does not perform a full restore. Keep another copy on a separate drive or location.\n").map_err(err)?;
     fs::write(output.join("Library Data/library.json.part"),serde_json::to_vec_pretty(&Backup{version:1,portable:true,client_events,library}).map_err(err)?).map_err(err)?;
     fs::rename(output.join("Library Data/library.json.part"),output.join("Library Data/library.json")).map_err(err)?;
     fs::write(output.join("Library Data/preferences.json"),serde_json::to_vec_pretty(preferences).map_err(err)?).map_err(err)?;
@@ -466,3 +470,7 @@ mod tests {
     }
 
 }
+
+#[cfg(test)]
+#[path = "backup_verification_tests.rs"]
+pub(crate) mod backup_verification_tests;

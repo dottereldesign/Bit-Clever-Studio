@@ -1,3 +1,4 @@
+import PreferenceRecovery from './PreferenceRecovery';
 import {initializeAppearanceDefaults} from './defaultAppearance';
 import {prepareHomeStartup} from './startup';
 import {startDiagnostics,flushDiagnostics,record,recordError} from './diagnostics';
@@ -9,12 +10,12 @@ import {loadLibraryPreferences,flushLibraryPreferences} from "./backupPreference
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {invoke,isTauri} from "./diagnostics";
 import {open} from "./nativeUi";
-function Recovery({error}:{error:unknown}){const [message,setMessage]=React.useState(String(error));return <div role="alert" style={{padding:32,maxWidth:720}}><h2>Locate Your Library</h2><p>Your library could not be opened. Reconnect its drive or choose its new location.</p><pre style={{whiteSpace:"pre-wrap"}}>{message}</pre><button onClick={()=>window.location.reload()}>Try Again</button><button onClick={async()=>{try{const path=await open({directory:true,multiple:false,title:"Locate your Bit Clever Library"});if(typeof path==="string")await invoke("open_library",{path});}catch(e){setMessage(String(e));}}}>Choose Library Folder</button></div>;}
+function Recovery({error}:{error:unknown}){const [message,setMessage]=React.useState(String(error));return <div role="alert" style={{padding:32,maxWidth:720}}><h2>Studio could not finish opening</h2><p>Try again, or reconnect and locate your library if its drive has moved. For a saved-settings problem, use Preference recovery below.</p><pre style={{whiteSpace:"pre-wrap"}}>{message}</pre><button onClick={()=>window.location.reload()}>Try Again</button><button onClick={async()=>{try{const path=await open({directory:true,multiple:false,title:"Locate your Bit Clever Library"});if(typeof path==="string")await invoke("open_library",{path});}catch(e){setMessage(String(e));}}}>Choose Library Folder</button><PreferenceRecovery/></div>;}
 class DiagnosticBoundary extends React.Component<{children:React.ReactNode},{failed:boolean}>{
  state={failed:false};
  static getDerivedStateFromError(){return {failed:true};}
  componentDidCatch(error:Error){recordError('frontend.render_error',error);void flushDiagnostics();}
- render(){return this.state.failed?<div role="alert" style={{padding:32}}><h2>The view could not be displayed</h2><p>The error has been recorded in local diagnostics. Your saved library has not been removed.</p><button onClick={()=>location.reload()}>Reload Studio</button></div>:this.props.children;}
+ render(){return this.state.failed?<div role="alert" style={{padding:32}}><h2>The view could not be displayed</h2><p>The error has been recorded in local diagnostics. Your saved library has not been removed.</p><button onClick={()=>location.reload()}>Reload Studio</button><PreferenceRecovery/></div>:this.props.children;}
 }
 const stopDiagnostics=startDiagnostics();
 if(import.meta.hot)import.meta.hot.dispose(stopDiagnostics);

@@ -1,3 +1,4 @@
+import {useModalFocus} from './useModalFocus';
 import { useEffect, useState } from "react";
 import { invoke } from "./diagnostics";
 import { RotateCcw, X } from "lucide-react";
@@ -8,13 +9,14 @@ export default function RemovedDialog({ close, restore, revision }: { close: () 
   const [items, setItems] = useState<RemovedItem[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const focus=useModalFocus(close,busy);
   const reload = () => invoke<RemovedItem[]>("removed_items").then(setItems);
   useEffect(() => { void reload().catch((e) => setError(String(e))); }, [revision]);
   return <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) close(); }}>
-    <div className="modal removed-modal" role="dialog" aria-modal="true" aria-label="Removed items">
-      <div className="modal-heading"><h2>Removed items</h2><div className="customise-history"><HistoryButtons/><button className="icon-button" aria-label="Close removed items" onClick={close}><X size={17} /></button></div></div>
-      <div className="removed-items">
-        {items?.map((item) => <div key={item.id} className="removed-item"><span><strong>{item.name}</strong><small title={item.path}>{item.path}</small></span><button disabled={busy} onClick={async () => {
+    <div {...focus} className="modal removed-modal" role="dialog" aria-modal="true" aria-label="Removed items">
+      <div className="modal-heading"><h2>Removed items</h2><div className="customise-history"><HistoryButtons/><button className="icon-button" disabled={busy} aria-label="Close removed items" onClick={close}><X size={17} /></button></div></div>
+      <div className="removed-items" aria-busy={busy}>
+        {items?.map((item) => <div key={item.id} className="removed-item"><span><strong>{item.name}</strong><small title={item.path}>{item.path}</small></span><button aria-label={`Restore ${item.name}`} disabled={busy} onClick={async () => {
           setBusy(true); setError("");
           try { await restore([item.id]); await reload(); } catch (e) { setError(String(e)); } finally { setBusy(false); }
         }}><RotateCcw size={13} /> Restore</button></div>)}

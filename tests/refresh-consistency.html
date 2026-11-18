@@ -1,0 +1,71 @@
+<!doctype html><html><head><meta charset="UTF-8"><title>Refresh consistency checks</title></head>
+<body><div id="root"></div><pre id="check-result" hidden>pending</pre><script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import App from '/src/App.tsx';
+import {appHistory} from '/src/appHistory.ts';
+import '/src/style.css';
+
+const library={items:[],projects:[{id:1,name:'Before',count:0}],tags:[],sources:[],root:'C:/Synthetic',scanning:false,undo_entries:[],undo_count:0};
+const callbacks=new Map(),listeners=new Map();let sequence=0,reads=0,active=0,maximum=0;
+let held=false;const pending=[];
+window.isTauri=true;
+window.__TAURI_INTERNALS__={
+  transformCallback:callback=>{callbacks.set(++sequence,callback);return sequence;},
+  unregisterCallback:id=>callbacks.delete(id),
+  convertFileSrc:path=>path,
+  invoke:async(command,args)=>{
+    if(command==='plugin:event|listen'){listeners.set(++sequence,{event:args.event,handler:args.handler});return sequence;}
+    if(command==='plugin:event|unlisten'){listeners.delete(args.eventId);return;}
+    if(command==='get_library'){
+      reads++;active++;maximum=Math.max(maximum,active);
+      const snapshot=structuredClone(library);
+      try {return held?await new Promise(resolve=>pending.push(()=>resolve(snapshot))):snapshot;}
+      finally {active--;}
+    }
+    if(command==='clients_initialise')return false;
+    if(command==='diagnostics_record')return;
+    throw Error(command);
+  }
+};
+window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:(_event,id)=>listeners.delete(id)};
+const emit=event=>{for(const [id,listener] of listeners)if(listener.event===event)callbacks.get(listener.handler)?.({event,id,payload:null});};
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const assert=(condition,message)=>{if(!condition)throw Error(message);};
+async function until(test,message){const start=performance.now();while(!test()){if(performance.now()-start>7000)throw Error(message);await pause(20);}}
+createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode,null,React.createElement(App)));
+const checks=[];
+try {
+  await until(()=>document.querySelector('.home-dashboard')&&document.querySelector('.project-row')?.textContent.includes('Before'),'Initial library');
+  await pause(40);
+  held=true;
+  library.projects[0].name='Obsolete';
+  library.undo_entries=[{id:99,label:'Obsolete history'}];
+  emit('library-changed');await until(()=>pending.length===1,'Delayed read started');
+  library.projects[0].name='Newest';
+  library.undo_entries=[{id:1,label:'Current history'}];library.undo_count=1;library.undo_label='Current history';
+  const beforeReads=reads;
+  emit('library-changed');emit('library-changed');emit('scan-started');
+  await pause(30);
+  assert(reads===beforeReads,'An event burst must not start parallel library reads');
+  pending.shift()();await until(()=>pending.length===1,'Follow-up read started');
+  assert(document.querySelector('.project-row').textContent.includes('Before'),'Obsolete response changed the visible project');
+  assert(!appHistory.past.some(entry=>entry.label==='Obsolete history'),'Obsolete response polluted history');
+  pending.shift()();await until(()=>document.querySelector('.project-row').textContent.includes('Newest'),'Latest response applied');
+  assert(maximum===1,'Multiple database loads ran concurrently');
+  assert(appHistory.past.filter(entry=>entry.label==='Current history').length===1,'Current native history must be recorded exactly once');
+  assert(!appHistory.past.some(entry=>entry.label==='Obsolete history'),'Obsolete history was replayed');
+  checks.push('Delayed responses cannot overwrite projects or add obsolete undo entries');
+  checks.push('Library and scan event bursts coalesce into one follow-up read');
+  held=false;emit('library-changed');await until(()=>active===0,'Later refresh finished');await pause(30);
+  assert(appHistory.past.filter(entry=>entry.label==='Current history').length===1,'Repeated snapshot duplicated history');
+  checks.push('Repeated accepted snapshots do not duplicate undo history');
+  library.maintenance_warning='Saved your changes, but library files need recovery. Reconnect the fixture drive.';
+  emit('library-changed');await until(()=>document.body.textContent.includes('Reconnect the fixture drive.'),'Recovery warning displayed');
+  library.maintenance_warning=null;emit('library-changed');await until(()=>!document.body.textContent.includes('Reconnect the fixture drive.'),'Repaired warning clears');
+  checks.push('Interrupted-file warning clears when the recovered native snapshot arrives');
+  document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks,maximumConcurrentReads:maximum});
+} catch(error) {
+  document.getElementById('check-result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack,checks});
+}
+</script></body></html>

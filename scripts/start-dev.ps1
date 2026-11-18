@@ -5,7 +5,16 @@ $projectDirectory = Split-Path -Parent $PSScriptRoot
 $launchExitCode = 0
 
 try {
+    $nodeVersion = (Get-Content -LiteralPath (Join-Path $projectDirectory '.node-version') -Raw).Trim()
+    $portableNodeDirectory = Join-Path $projectDirectory ".tools\node-v$nodeVersion-win-x64"
+    if (Test-Path -LiteralPath (Join-Path $portableNodeDirectory 'node.exe')) {
+        $env:Path = "$portableNodeDirectory;$env:Path"
+    }
     $nodeCommand = Get-Command node.exe -ErrorAction Stop
+    $actualNodeVersion = & $nodeCommand.Source --version
+    if ($actualNodeVersion -ne "v$nodeVersion") {
+        throw "Node $nodeVersion is required to match CI. Run powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-node.ps1, then reopen Design Dev."
+    }
     $null = Get-Command cargo.exe -ErrorAction Stop
     if (-not (Test-Path -LiteralPath (Join-Path $projectDirectory 'node_modules\@tauri-apps\cli\tauri.js'))) {
         throw 'Dependencies are missing. Run npm ci in the project folder once, then open Design Dev again.'

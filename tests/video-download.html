@@ -3,12 +3,12 @@ import React from 'react';import {createRoot} from 'react-dom/client';import App
 const poster='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="tan"/></svg>');
 const library={items:[],projects:[{id:7,name:'Website',count:0}],tags:[{id:1,name:'Sports',count:0}],sources:['Design','Videos'],root:'C:/mock',scanning:false};
 const url='https://www.facebook.com/watch/?ref=saved&v=1459999332693030';
-const calls=[],started=[];let callbackId=0,current=null,live=0,maxLive=0;
+const calls=[],started=[];let callbackId=0,current=null,live=0,maxLive=0,lateCancelFailure,oldProgress;const attempts=new Set();
 window.isTauri=true;window.__TAURI_INTERNALS__={transformCallback:()=>++callbackId,convertFileSrc:()=>poster,invoke:async(command,args)=>{
  calls.push({command,args});if(command==='get_library')return structuredClone(library);if(command.startsWith('plugin:event|'))return ++callbackId;
  if(command==='read_clipboard')return {files:[],url};if(command==='get_media')return 'video-poster.png';
- if(command==='download_video')return new Promise((resolve,reject)=>{live++;maxLive=Math.max(maxLive,live);current={args,resolve,reject};started.push(args.input.url);});
- if(command==='cancel_video_download'){const job=current;current=null;live--;job.reject('Download cancelled.');return;}
+ if(command==='download_video'){assert(typeof args.jobId==='string'&&args.jobId.length>0&&!attempts.has(args.jobId),'Fresh download attempt identity');attempts.add(args.jobId);}if(command==='download_video')return new Promise((resolve,reject)=>{live++;maxLive=Math.max(maxLive,live);current={args,resolve,reject};started.push(args.input.url);});
+ if(command==='cancel_video_download'){assert(args.jobId===current.args.jobId,'Cancel targets the active attempt');const job=current;current=null;live--;oldProgress=job.args.onProgress;job.reject('Download cancelled.');return new Promise((resolve,reject)=>{lateCancelFailure=reject;});}
  throw Error(`Unexpected ${command}`);
 }};window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener(){}};
 createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode,null,React.createElement(App,{startOnHome:false})));
@@ -34,7 +34,7 @@ try{
  await until(()=>document.querySelectorAll('.download-queue-item.queued').length===3,'waiting batch');assert(started.length===1,'More than one download started');
  assert(document.activeElement===document.querySelector('[aria-label="Queue video links"]')&&document.activeElement.value==='','Quick entry should stay focused and clear');
  await quick('https://www.facebook.com/watch/?v=1459999332693030&ref=other');assert(document.querySelectorAll('.download-queue-item').length===4,'Active duplicate added');
- const stored=JSON.parse(localStorage.getItem('video-download-queue-v1'));assert(stored.filter(job=>job.status==='queued').length===3&&stored.find(job=>job.status==='active').projects[0]===7,'Queue persistence');
+ const stored=JSON.parse(localStorage.getItem('video-download-queue-v2:'+localStorage.getItem('active-library-root')));assert(stored.filter(job=>job.status==='queued').length===3&&stored.find(job=>job.status==='active').projects[0]===7,'Queue persistence');
  row('https://example.com/four').querySelector('[aria-label="Remove queued video"]').click();await until(()=>row('https://example.com/four').classList.contains('cancelled'),'remove waiting');assert(!calls.some(call=>call.command==='cancel_video_download'),'Removing waiting item cancelled active');
  await quick('https://example.com/good\nnot a URL');assert(document.querySelector('.download-queue .form-error'),'Invalid batch was accepted');assert(document.querySelectorAll('.download-queue-item').length===4,'Invalid batch partly queued');
  checks.push('Batch paste waits in FIFO order, active duplicates are skipped, waiting items can be removed, and invalid batches add nothing');
@@ -46,7 +46,7 @@ try{
  await until(()=>row('https://example.com/two')?.classList.contains('done'),'retry saved');assert(maxLive===1,'Overlapping downloads');
  assert(started.join('|')==='https://www.facebook.com/watch/?v=1459999332693030|https://example.com/two|https://example.com/three|https://example.com/two','Incorrect execution order');
  checks.push('Browsing remains available; finishing does not move your view; failures and cancellation advance automatically; retries return to the queue');
- row('https://example.com/three').querySelector('[aria-label="Retry video"]').click();await until(()=>current?.args.input.url==='https://example.com/three','retry cancelled');
+ row('https://example.com/three').querySelector('[aria-label="Retry video"]').click();await until(()=>current?.args.input.url==='https://example.com/three','retry cancelled');oldProgress.onmessage({phase:'downloading',percent:99,downloaded:99,total:100,speed:1,eta:1});lateCancelFailure('Late cancellation error');await pause(60);assert(!row('https://example.com/three').textContent.includes('Late cancellation error'),'Stale cancellation changed retry');assert(![...document.querySelectorAll('progress')].some(p=>p.value===99),'Stale progress changed retry');
  [...document.querySelectorAll('.download-queue footer button')].find(b=>b.textContent==='Clear finished').click();await until(()=>document.querySelectorAll('.download-queue-item').length===1,'clear history');assert(row('https://example.com/three').classList.contains('active'),'Clear finished removed active work');
  document.querySelector('[aria-label="Hide downloads"]').click();await pause(40);assert(!document.querySelector('.download-queue'),'Panel did not hide');finish();await until(()=>library.items.length===3,'hidden completion');await pause(100);assert(!document.querySelector('.download-queue'),'Completion reopened hidden panel');assert(document.querySelector('h1').textContent==='Links','Hidden completion navigated');
  nav('Facebook Videos');await until(()=>document.querySelectorAll('.card').length===3,'saved grid');document.querySelector('.card .card-open').click();await until(()=>document.querySelector('.viewer video'),'viewer');

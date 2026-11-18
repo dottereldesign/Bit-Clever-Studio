@@ -1,0 +1,55 @@
+<!doctype html><html><head><meta charset="UTF-8"><title>Library isolation contracts</title></head><body><div id="root"></div><pre id="check-result" hidden>pending</pre><script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import useVideoQueue from '/src/useVideoQueue.ts';
+import {collectBackupPreferences, loadLibraryPreferences, applyBackupPreferences} from '/src/backupPreferences.ts';
+const assert=(condition,label)=>{if(!condition)throw Error(label);};
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function until(test,label){for(let n=0;n<200;n++){if(test())return;await pause(20);}throw Error(label);}
+let active='library-B', callback=0, state, root;
+const calls=[], errors=[], preferences={'library-A':{'sidebar-hidden-sections':['Marketing']},'library-B':{}};
+window.isTauri=true;
+window.__TAURI_INTERNALS__={transformCallback:()=>++callback,invoke:async(command,args)=>{
+  if(command==='library_preferences')return preferences[active];
+  if(command==='library_overview')return {root:active};
+  if(command==='download_video'){calls.push({root:active,...args.input});return {id:1,reused:false};}
+  if(command==='diagnostics_record')return;
+  throw Error('Unexpected command: '+command);
+}};
+const job={id:'A-job',url:'https://example.test/synthetic-video',projects:[42],tags:[],status:'queued'};
+function Queue(){state=useVideoQueue(true,async()=>{},error=>errors.push(String(error)));return React.createElement('div',{'data-ready':true},'Synthetic queue');}
+async function mount(){state=undefined;root=createRoot(document.getElementById('root'));root.render(React.createElement(Queue));await until(()=>state&&document.querySelector('[data-ready]'),'Queue mounted');await pause(100);}
+try{
+  localStorage.clear();
+  localStorage.setItem('active-library-root','library-A');
+  localStorage.setItem('sidebar-hidden-sections','["Marketing"]');
+  localStorage.setItem('video-download-queue-v1',JSON.stringify([{...job,id:'legacy-job'}]));
+  const original=JSON.stringify([job]);
+  localStorage.setItem('video-download-queue-v2:library-A',original);
+  const backup=collectBackupPreferences();
+  assert(backup['sidebar-hidden-sections'][0]==='Marketing','Visibility omitted from backup');
+  await loadLibraryPreferences();await mount();
+  assert(localStorage.getItem('active-library-root')==='library-B','Library identity did not change');
+  assert(localStorage.getItem('sidebar-hidden-sections')===null,'Visibility leaked into B');
+  assert(calls.length===0,'Foreign or legacy job resumed in B');
+  assert(localStorage.getItem('video-download-queue-v2:library-A')===original,'B overwrote A queue');
+  root.unmount();active='library-A';await loadLibraryPreferences();await mount();
+  await until(()=>calls.length===1,'A queue did not resume in its own library');
+  assert(calls[0].root==='library-A'&&calls[0].projects[0]===42,'Queue destination changed');
+  assert(localStorage.getItem('sidebar-hidden-sections')==='["Marketing"]','A visibility not restored');
+  await until(()=>JSON.parse(localStorage.getItem('video-download-queue-v2:library-A'))[0]?.status==='done','Completion persisted');
+  root.unmount();active='library-B';await loadLibraryPreferences();await mount();
+  assert(calls.length===1,'Returning to B replayed a job');
+  applyBackupPreferences(backup);
+  assert(localStorage.getItem('sidebar-hidden-sections')==='["Marketing"]','Backup visibility restore failed');
+  root.unmount();
+  for(const cancelling of [false,true]){
+    localStorage.setItem('video-download-queue-v2:library-B',JSON.stringify([{...job,status:'active',cancelling}]));
+    const count=calls.length;await mount();assert(calls.length===count,'Interrupted job auto-restarted');
+    assert(state.jobs[0].status==='error'&&state.jobs[0].error.includes('nterrupted'),'Interrupted state explains Retry');
+    state.retry(job.id);await until(()=>state.jobs[0].status==='done','Explicit retry completes');assert(calls.length===count+1,'Retry starts once');root.unmount();
+  }
+  assert(errors.length===0,'Queue reported errors');
+  document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks:['A→B→A→B preference isolation and restore','Only the originating library resumes its queue; legacy jobs remain paused','Foreign queues remain unchanged; completion persists','Interrupted downloads and cancellation wait for explicit Retry'],downloads:calls.length});
+}catch(error){document.getElementById('check-result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack});}
+</script></body></html>

@@ -57,7 +57,8 @@ try {
   await until(() => menuButton('Copy image'), 'copy menu');
   await copy(() => menuButton('Copy image').click());
   checks.push('Right-click Copy image uses the same image');
-  document.querySelector('[data-item-id="1"] .card-open').click();
+  [...document.querySelectorAll('nav[aria-label=Library] button')].find(b=>b.querySelector('span')?.textContent==='Recently added').click();await pause(200);
+  document.querySelector('.recent-reference[data-item-id="1"]').click();
   await until(() => document.querySelector('.viewer'), 'viewer');
   await copy(() => document.querySelector('.viewer [aria-label="Copy image"]').click());
   await copy(() => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true })));

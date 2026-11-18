@@ -1,0 +1,94 @@
+{
+  "studio": [
+    {
+      "id": "fixture",
+      "avatar": "",
+      "meeting": null,
+      "kind": "lead",
+      "name": "Fixture",
+      "archived": false,
+      "organization": null,
+      "contacts": [],
+      "projects": [],
+      "handover_project": null,
+      "closed_at": 1794946549301,
+      "campaign": null,
+      "parent": null,
+      "files": [],
+      "tags": [],
+      "status": "won",
+      "service": "",
+      "source": "",
+      "value": 1200.0,
+      "currency": "NZD",
+      "date": "",
+      "end_date": "",
+      "body": "",
+      "email": "",
+      "phone": "",
+      "location": "",
+      "website": "",
+      "audience": "",
+      "message": "",
+      "offer": "",
+      "channel": "",
+      "results": "",
+      "metrics": [],
+      "variant_group": "",
+      "activity_type": "",
+      "actions": [],
+      "milestones": [],
+      "moodboard": [],
+      "stages": [],
+      "created": 1794946549178,
+      "updated": 1794946549301
+    }
+  ],
+  "client_records": {
+    "contacts": [],
+    "records": []
+  },
+  "project_overviews": [],
+  "project_folders": [],
+  "undo_entries": [
+    {
+      "id": 1,
+      "label": "Edit studio record"
+    },
+    {
+      "id": 2,
+      "label": "Edit studio record"
+    }
+  ],
+  "undo_label": "Edit studio record",
+  "undo_count": 2,
+  "redo_label": null,
+  "redo_count": 0,
+  "categories": [
+    "Photography"
+  ],
+  "items": [],
+  "projects": [],
+  "tags": [
+    {
+      "id": 1,
+      "name": "Psychology & Wellbeing",
+      "count": 0
+    },
+    {
+      "id": 2,
+      "name": "School",
+      "count": 0
+    },
+    {
+      "id": 3,
+      "name": "Sports",
+      "count": 0
+    }
+  ],
+  "sources": [],
+  "root": "",
+  "scanning": false,
+  "recent_projects": [],
+  "source_paths": []
+}

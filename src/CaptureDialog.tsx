@@ -1,3 +1,4 @@
+import {useModalFocus} from './useModalFocus';
 import WebsiteAutoCapture from './WebsiteAutoCapture';
 import {stageFiles} from "./captureImport";
 import CaptureProgress, {type ImportProgress} from "./CaptureProgress";
@@ -46,6 +47,7 @@ export default function CaptureDialog({
   const [reading, setReading] = useState(false);
   const [ratio, setRatio] = useState(4/3);
   const [adjusting, setAdjusting] = useState(false);
+  const focus=useModalFocus(close,busy||reading,adjusting);
   const pending = useRef(false);
   const saving = useRef(false);
   const website = linkDestination === "websites";
@@ -132,7 +134,7 @@ export default function CaptureDialog({
     catch(e){setError(String(e));}finally{pending.current=false;setReading(false);}
   };
   if(website)return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget&&!busy&&!reading)close();}}>
-    <div className="modal capture-modal website-capture" role="dialog" aria-modal="true" aria-label="Add website"
+    <div {...focus} className="modal capture-modal website-capture" role="dialog" aria-modal="true" aria-label="Add website"
       onKeyDown={e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='v'){e.preventDefault();e.stopPropagation();void paste();}if(e.key==='Escape'&&(busy||reading)){e.preventDefault();e.stopPropagation();}}}
       onPaste={e=>{if(e.clipboardData.files.length){e.preventDefault();void receiveWebsiteFiles(Array.from(e.clipboardData.files));}}}
       onDragOver={e=>{e.preventDefault();e.stopPropagation();}}
@@ -158,13 +160,14 @@ export default function CaptureDialog({
       }}
     >
       <div
+        {...focus}
         className="modal capture-modal"
         role="dialog"
         aria-modal="true"
         aria-label="Capture"
         onKeyDown={e=>{
           if(board && e.key==='Enter' && pending.current) { e.preventDefault(); e.stopPropagation(); saveAfterPaste.current=true; return; }
-          if(board && e.key==='Enter' && ((e.target instanceof HTMLInputElement) || (e.target as HTMLElement).closest('.capture-assign'))) { e.preventDefault(); e.stopPropagation(); form.current?.requestSubmit(); return; }
+          if(board && e.key==='Enter' && (e.target instanceof HTMLInputElement)) { e.preventDefault(); e.stopPropagation(); form.current?.requestSubmit(); return; }
           if(e.key==='Escape'&&(busy||reading)){e.preventDefault();e.stopPropagation();}
           if(board&&(e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='v') {e.preventDefault();e.stopPropagation();void paste();}
         }}

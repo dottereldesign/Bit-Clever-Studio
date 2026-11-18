@@ -64,8 +64,8 @@ try{
  const tallBox=stage().getBoundingClientRect();assert(tallBox.top>=20&&tallBox.bottom<innerHeight-65&&Math.abs(tallBox.width/tallBox.height-400/1500)<.01,'Tall image cropped');
  document.querySelector('.thumbnail-enlargement-close').click();await until(()=>!overlay(),'Close button');
  checks.push('Very tall references remain uncropped at maximum size');
- image=visibleImage();const normal=image.getBoundingClientRect();await click(normal.left+normal.width/2,normal.top+normal.height/2);await until(()=>document.querySelector('.viewer'),'Normal click viewer');
- checks.push('Ordinary thumbnail clicks still open the existing viewer');
+ image=visibleImage();const normal=image.getBoundingClientRect();await click(normal.left+normal.width/2,normal.top+normal.height/2);await until(()=>image.closest('.card').classList.contains('selected'),'Normal click selects');assert(!document.querySelector('.viewer'),'Gallery click opened full viewer');image.closest('button').focus();key(' ');await until(()=>document.querySelector('.quick-preview'),'Space opens preview');key('Escape');await until(()=>!document.querySelector('.quick-preview'),'Escape closes preview');
+ checks.push('Ordinary gallery clicks select; Space previews and Escape closes');
  document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches});
 }catch(error){document.getElementById('check-result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack,checks,stage:stage()?.getBoundingClientRect().toJSON(),scroll:document.querySelector('.content')?.scrollTop,calls:calls.slice(-3)});}
 </script></body></html>

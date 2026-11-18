@@ -4,13 +4,16 @@ A local Windows inspiration library. Tauri 2, React, TypeScript, Rust and SQLite
 
 ## Run
 
-Open `app/Design.exe` for the standalone app. The `Open Design` shortcut in this folder launches it directly.
+For daily development, open **Design Dev** from the Windows desktop and leave its terminal and app open. CSS and frontend edits hot reload in that window. The ordinary **Design** shortcut and `app/Design.exe` continue to open the last standalone build; they do not receive hot reload.
 
-For daily development, open **Design Dev** from the Windows desktop and leave its terminal and app open. CSS and frontend edits hot reload in that window. The ordinary **Design** shortcut continues to open the last standalone build.
+Use the Node 22 version pinned in `.node-version` (also used by CI), and Rust 1.89 or newer. On Windows x64, the optional setup script downloads the official Node archive, verifies its SHA-256, and installs it under ignored `.tools/`; it does not change system Node or your permanent PATH. Design Dev automatically selects that runtime.
 
 On a fresh checkout, install dependencies once and start development from a normal Windows terminal:
 
 ```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-node.ps1
+$nodeVersion = (Get-Content .node-version -Raw).Trim()
+$env:Path = "$PWD\.tools\node-v$nodeVersion-win-x64;$env:Path"
 npm ci
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-dev.ps1
 ```
@@ -29,25 +32,27 @@ Packaging writes a standalone copy to `app/Design.exe`; reopen it from the ordin
 
 ## Browse and preview references
 
-The app reopens your last page, filters, sort order and scroll position, including an open image viewer. Home is the first-launch default and remains a sidebar destination. Position restoration yields to user input and stops waiting after three seconds if a thumbnail is unavailable.
+Every normal startup opens Home with sidebar sections collapsed. Expand the section you want to browse. Appearance and library preferences remain saved; startup does not reopen the previous page or an image viewer.
 
 Hold **Ctrl** and scroll up over a thumbnail to progressively enlarge the whole image against a softly blurred background. Scroll down to return it to the grid; **Escape**, **Space** or clicking outside also closes it. Releasing Ctrl keeps it open; scrolling without Ctrl closes the enlargement and continues scrolling the page. **+ / −** and **↑ / ↓** resize an open enlargement. Video thumbnails enlarge their poster without starting playback. App and system reduced-motion preferences are respected.
 
-The main sidebar starts with Links. Media can be browsed through Categories and Projects; All categories provides the combined category view.
+The sidebar includes Marketing, Leads, Organisations, My Business, Projects, General, Design Inspo, App Components, Code, Analytics and Research. Drag section headings to reorder them; use the eye button labelled Sidebar visibility to show or hide sections. Customise app → Sidebar controls their appearance. General contains collections such as Links and Recently added; Design Inspo and App Components contain their own folders.
 
-- Hover a video or animation for a muted, looping preview. Click for the viewer; use arrow keys and Escape.
-- At window widths of 1,600 CSS pixels or more, clicking media opens a right-hand preview. The grid, sidebar and filters stay interactive; click another thumbnail to switch, and the current reference has a green outline. Resizing automatically switches between this layout and the overlay while retaining the open item. Closing a side preview keeps your browsing position. Filtering out the current item closes its preview.
+- Hover a video or animation for a muted, looping preview. In Design Inspo and App Components, a normal thumbnail click selects the reference; Space opens Quick preview. Arrow keys browse the filtered references, and Space or Escape closes the preview.
+- In Recently added, clicking an image or video opens the full viewer. At window widths of 1,600 CSS pixels or more, that viewer appears on the right. The reference list, sidebar and filters stay interactive; click another reference to switch. Resizing automatically switches between this layout and the overlay while retaining the open item. Closing a side preview keeps your browsing position. Filtering out the current item closes its preview.
 - In the image viewer, scroll to zoom into the point under your cursor. Drag to pan, and double-click or click the percentage to reset. Zoom resets when you switch images.
-- Close the overlay viewer with Escape, X or its backdrop to return to the last-viewed image in the grid. Its row scrolls into view, its thumbnail highlights briefly, and keyboard focus returns to its Open button so Enter reopens it. Search, filters, sort order and selection stay unchanged.
+- Close the overlay viewer with Escape, X or its backdrop. Gallery Quick preview returns keyboard focus to the thumbnail that opened it, so Space can reopen it. Preview navigation preserves gallery scroll position, search, sort order and selection.
 - Copy an image using its thumbnail's clipboard button, the viewer's clipboard button, right-click → Copy image, or Ctrl+C in the viewer. This writes full-resolution image pixels to the system clipboard for pasting into other apps, including transparency. Image orientation is applied; animated images copy their first frame. Videos do not offer image copy.
 
 Hover or focus a reference and press Space to peek. Space/Escape closes the preview; arrow keys browse the current filtered view without opening websites. Videos use muted previews. Search fields retain their normal typing shortcuts.
 
 - The sidebar can be resized. Thumbnail size and sidebar width are remembered.
 
-**Recently added** groups references from every collection by their local date of entry into the library. **Recently viewed** remembers the last 60 distinct references you opened or previewed on this device. Use **Customise shortcuts** in the sidebar footer to pin, reorder or hide collections and favourite websites, or add a website.
+**Recently added** groups references from every collection by their local date of entry into the library. **Recently viewed** remembers the last 60 distinct references you opened or previewed on this device. Use **Customise app → General** to manage collections and **Customise app → Websites** to manage favourite websites. Home tile controls are under **Customise app → Home → Tiles**; the neighbouring Overview, Events, Projects and Won business tabs control dashboard summaries.
 
 ## Organise a project
+
+A project opens its Overview. Choose Files for folder cards and Unfiled, then open a folder to see its references. File rows select on a single click; their Preview button or Enter previews media. Link preview opens the website. Projects no longer display every reference at their root.
 
 Design, Photography and Videos are watched storage folders. Photography and Videos sit beside the chosen Design folder. Categories organise media in the library. Projects group references across folders and collections.
 
@@ -103,21 +108,31 @@ Resources lists saved sites by category, including Photography. Pinterest, Dribb
 
 ## Back up and restore
 
-For a portable copy, use **Settings → Export full library**. Check the export summary for unavailable files. To restore, place the entire backup folder in its permanent location and select its `library.json` under **Settings → Import metadata**. Restored references use the media in that folder.
+For a portable copy, use **Settings → Backup → Export full library**. Check the export summary for unavailable files. To restore, place the entire backup folder in its permanent location and select its `library.json` under **Settings → Backup → Import metadata**. Restored references use the media in that folder.
 
-Settings → Export metadata saves projects, tags, links and file references as JSON. Import merges by file path and label name, preserving existing metadata and avoiding duplicate memberships. Original media and thumbnail image files are not included in the metadata backup; back up the source folders and `link-thumbnails` folder to preserve those files. Missing originals remain listed so their collections and tags are retained. Metadata-only exports use absolute paths; moving files outside the app currently requires relinking through a backup edit or returning them to their original paths.
+Settings → Backup → Export metadata saves projects, tags, links and file references as JSON. Import merges by file path and label name, preserving existing metadata and avoiding duplicate memberships. Original media and thumbnail image files are not included in the metadata backup; back up the source folders and `link-thumbnails` folder to preserve those files. Missing originals remain listed so their collections and tags are retained. Metadata-only exports use absolute paths; moving files outside the app currently requires relinking through a backup edit or returning them to their original paths.
 
 ## Local development data
 
 Windows MSIX warning for development/data maintenance: Codex-launched processes can see a redirected `%LOCALAPPDATA%` under `Packages/OpenAI.Codex_2p2nqsd0c76g0/LocalCache/Local`. Even ordinary absolute paths and `\\?\` paths can resolve to that separate copy. A Design process launched by Codex can therefore show a different library from the user's Explorer-launched app. For actual user-data changes, use Export/Import metadata in the already running normal app, and verify its projects and collection counts. Do not infer the correct database from the apparent path alone, or relaunch the user's app from Codex to verify their data.
 
-Metadata is stored in `%LOCALAPPDATA%/local.design.viewer/library.sqlite`; thumbnails and video conversions live in the sibling `cache` folder. Pasted link thumbnails are copied into `%LOCALAPPDATA%/local.design.viewer/link-thumbnails`; their original clipboard/source files are not needed after saving. The database and cache stay outside OneDrive. Originals remain in the selected source folder. OneDrive files must be available locally for decoding.
+A managed library keeps its database at `<library>/Library Data/Library.sqlite`, with owned thumbnails and appearance assets in that library. Legacy libraries use `%LOCALAPPDATA%/local.design.viewer/library.sqlite`; generated thumbnails and video conversions use the app cache. For legacy storage, pasted link thumbnails are copied into `%LOCALAPPDATA%/local.design.viewer/link-thumbnails`; their original clipboard/source files are not needed after saving. A managed database follows the selected library location; do not assume it is outside OneDrive. Originals remain in the selected source folder. OneDrive files must be available locally for decoding.
 
 Video previews are generated on demand, limited to eight seconds, muted and cached. GIF and animated WebP hover previews play directly from their original files. The full viewer plays the original when compatible and generates a compatible copy for MOV or codec fallback. The first conversion can take a few seconds. Only the hovered card plays in the grid. Thumbnail generation is limited to three jobs at once. Unsupported or damaged files get a fallback tile without breaking the library.
 
 ## Checks
 
-For temporary app/process monitoring and a repeatable synthetic browser workload, see [performance diagnostics](PERFORMANCE.md). Use `npm run diagnose:performance` or `npm run diagnose:processes`; both stop after their capture and keep local reports out of Git.
+For routine work, keep Design Dev open and verify the affected interaction there before committing. Browser fixtures use isolated headless Chrome profiles and synthetic libraries; they do not verify the native database or your real library. Do not automate the user’s desktop or copy their database into test fixtures. Ask for a focused manual check when desktop verification is needed.
+
+Run `npm run test:browser:smoke` for startup, sidebar/category persistence, mixed undo, project filing/privacy and pointer drags, thumbnail/Space preview and focus return, two-library queue/preferences, workflow tools and export. Windows CI runs this same suite. Run the relevant focused fixture when changing an interaction, `npm test` and `npx tsc --noEmit` for frontend behaviour, and `npm run test:native` for native/database changes. Browser fixtures require installed Chrome on Windows. The runner owns its Vite server on loopback port 1421 (1422 for wide-preview/performance), so run fixtures sequentially. Screenshots remain in ignored `.tools/checks`. A timeout is a failed check, not a performance measurement.
+
+Keep test selectors tied to labels and roles. Expand sidebar sections before pointer input, select Customise tabs by name, and wait for state changes before continuing. Mock commands must reflect the current API; native tests remain necessary for history IDs, timestamps, library switching and transactional persistence. `npm test` includes a frozen native-generated won-lead JSON contract consumed by both Analytics and Home; its provenance is in [the fixture notes](../tests/fixtures/README.md). It guards frontend timestamp interpretation but does not automatically regenerate the native schema.
+
+Run `npm run test:contracts` on Windows for the live Rust-to-TypeScript recovery/import contract. It creates disposable libraries, captures native snapshots in ignored `.tools/contracts/`, then checks them with real frontend membership, preference and history consumers. Windows CI runs it after the native suite. `npm test` also checks a frozen synthetic copy; see [fixture provenance and regeneration](../tests/fixtures/README.md#recovery-and-import-contract).
+
+After local verification, stage only the requested changes, run `npm run scan:secrets`, then commit and push using existing authentication. A pushed branch is a backup; integration can remain pending. Routine test/docs work does not require `npm run build`, packaging, a version bump, a tag or a release.
+
+For temporary app/process monitoring and a repeatable synthetic browser workload, see [performance diagnostics](PERFORMANCE.md). Use `npm run diagnose:performance`, the repeated 4,000/20,000-item `npm run diagnose:libraries` matrix, or `npm run diagnose:processes`; each stops after its capture and keeps local reports out of Git. The performance guide also documents the disposable native database/serialisation profile.
 
 ```powershell
 npm test
@@ -130,13 +145,13 @@ npm run test:workflow
 npm run test:drag
 npm run test:categories
 npm run test:export
-npm run build
+npx tsc --noEmit
 npm run test:native
 ```
 
 Tests cover combined filters, project-specific pin ordering, source descendants, stable shuffle, indexing without losing curation, thumbnail decoding, missing files, project deletion without deleting originals, URL validation, idempotent backup import including pins, duplicate capture across image formats, duplicate video bytes with renamed files, recovery and stale-match rejection, and chunked file staging.
 
-`test:grid` launches its own headless Chrome process with a temporary profile and a mocked 420-image library. It checks returning after 200 arrow-key advances, Escape and X, actual Enter-key reopening, highlight expiry, retained filters/sorting, and wraparound at wide and narrow window sizes. It never attaches to or controls your open browser/app windows or reads the real library.
+`test:grid` launches its own headless Chrome process with a temporary profile and a mocked 420-image library. It checks gallery selection, 200 arrow-key advances in Space preview, focus/scroll return with Escape and the close button, Space reopening/closing, retained search/sort, and filtered wraparound at wide and narrow window sizes. It never attaches to or controls your open browser/app windows or reads the real library.
 
 `test:clipboard-scroll` checks failed copy/paste recovery, ordinary scrolling out of an accidental Ctrl-wheel enlargement, and cancellation/timeout of a stalled position restore using an isolated mock library.
 
@@ -146,6 +161,28 @@ Tests cover combined filters, project-specific pin ordering, source descendants,
 
 `test:video` checks FIFO execution with a maximum of one active download, repeated/batch paste, optional metadata, live progress/ETA, removal of waiting items, active cancellation, automatic advancement after failures, retry order, persistence, duplicate suppression, invalid batches, background browsing without view changes, and hiding/clearing the queue without stopping active work, in isolated headless Chrome. Pure queue tests also verify interrupted-job restoration, cancellation intent, assignment merging and URL validation. Native tests cover progress parsing, URL normalization, durable imports, repeat-link reuse and process cancellation. The ignored `requested_video_download_smoke` test downloads only an explicitly supplied URL; it uses a temporary library unless `DESIGN_DOWNLOAD_SMOKE_DB` explicitly identifies the library to add to, and verifies both a decoded thumbnail and hover preview with FFmpeg.
 
-`test:preview` checks the side preview at 3440, 1920, 1600 and 1599 pixels, including live resizing across the breakpoint, grid clicks and scrolling, current-thumbnail highlighting, arrow navigation, close behaviour and filtering. It uses an isolated mocked library.
+`test:preview` checks the side preview at 3440, 1920, 1600 and 1599 pixels, including live resizing across the breakpoint, Recently added clicks and scrolling, current-thumbnail highlighting, arrow navigation, close behaviour and filtering. Poster galleries separately exercise Space preview and masonry layout. It uses an isolated mocked library.
 
 The Links table includes a Category column, also shown for ordinary links within projects. Link categories use the existing `Links/<category>` source namespace and are preserved by metadata and portable backups. Uncategorized links display a dash. They do not create Design Inspo or App Components folders.
+
+### Refresh consistency regression
+
+`node scripts/check-grid-return.mjs refresh-consistency` runs the actual App with delayed synthetic library responses at wide and narrow sizes. It verifies event coalescing, visible project state, and exactly-once native history recording. It is included in `test:browser:smoke`. `npm test` also covers coordinator burst/error/retry behaviour. The native `snapshot_tests` test commits a synthetic writer after item loading and verifies that relationships, counts and history remain on the same read snapshot; the next load sees the committed change. No real library is used.
+
+### Preference recovery
+
+Saved preference values are validated before rendering and when restoring backups or replaying preference history. Malformed fields fall back safely; valid compatible fields are retained. Original malformed values remain in local WebView storage, scoped by active library root, and can be downloaded from Settings → General → Preference recovery.
+
+Reset preferences saves a local copy of the current appearance, layout and shortcut preferences, persists the reset to the active library, then reloads. Restore previous preferences validates that saved copy, persists it and reloads. A failed native save rolls local preferences back and leaves the recovery controls usable. Projects, files, unfinished drafts and download queues are not reset. These local recovery copies are not included in library exports and do not survive clearing WebView storage.
+
+`node scripts/check-grid-return.mjs preference-recovery` tests malformed saved values, failed-save rollback, and successful reset/restore across actual reloads in an isolated browser. It is included in the CI smoke suite. `npm test` covers the schema, storage recovery, library scoping and history replay without accessing the real library. Add new backed-up preference keys and their shape validation together in `preferenceSchema.ts`.
+
+### Accessibility regression
+
+`node scripts/check-grid-return.mjs accessibility` runs the full App in isolated Chrome at 1440×940 and the desktop minimum 850×580. It sends native Enter/Tab/Shift+Tab/Escape/radio-arrow events and inspects Chromium's accessibility tree. It verifies Duplicates containment and focus return, named groups/progress, portal exclusion, busy-state dismissal protection, nonmodal picker dismissal and colour-history focus. Selected duplicate text is checked across all theme presets plus Studio; green samples are checked separately. The fixture is included in `test:browser:smoke` and uses synthetic duplicate groups—no real files are removed.
+
+The tests do not substitute for manual NVDA/Narrator speech verification or prove contrast/accessibility across every app surface. For desktop spot checks, open Duplicates from Settings → Library, traverse with Tab/Shift+Tab and close with Escape, then check both colour pickers. Avoid removing real duplicates for this check.
+
+For backup coverage and the disposable native restore command (`npm run verify:restore`), see [backup verification](BACKUPS.md). With no arguments it uses only synthetic fixtures; `-- --folder "PATH"` explicitly selects a complete export for read-only source verification.
+
+For disposable child-process interruption tests and recovery guarantees/limits, see [interrupted operations](RECOVERY.md). Run `npm run test:native -- interruption_tests`; do not invoke the ignored crash worker directly or induce failures in Design Dev.

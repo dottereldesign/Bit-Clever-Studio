@@ -5,7 +5,7 @@ import {blankEntry} from './studio';
 import type {Library} from './model';
 const empty=():Library=>({root:'test',items:[],projects:[],tags:[],sources:[],scanning:false});
 test('Won business keeps currencies separate and uses close dates with a legacy fallback',()=>{
- const lib=empty(),stamp=new Date(2026,10,10).getTime()/1000;
+ const lib=empty(),stamp=new Date(2026,10,10).getTime();
  lib.studio=[{...blankEntry('lead','Won'),id:'one',status:'won',value:1200,currency:'NZD',created:1,closed_at:stamp},{...blankEntry('lead','Old'),id:'two',status:'won',value:300,currency:'NZD',created:stamp,archived:true},{...blankEntry('lead','USD'),id:'three',status:'won',value:800,currency:'USD',created:stamp},{...blankEntry('lead','Open'),id:'four',status:'proposal',value:900,currency:'NZD',created:stamp},{...blankEntry('client_entry','Paid quote'),id:'five',service:'quote',status:'paid',value:500,currency:'NZD'}];
  const result=recordedRevenue(lib,defaultOverview,new Date(2026,10,14));assert.equal(result.total,1500);assert.equal(result.count,2);assert.equal(result.otherCurrencies,1);assert.equal(result.legacy,1);assert.equal(result.months.at(-1)?.value,1500);
 });

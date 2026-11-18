@@ -17,6 +17,23 @@ use std::{
     time::{Duration, Instant},
 };
 
+
+#[derive(Default)]
+pub struct Cancellation(std::sync::Mutex<Option<(String,std::sync::Arc<AtomicBool>)>>);
+impl Cancellation {
+    pub fn start(&self,id:String)->Result<std::sync::Arc<AtomicBool>> {
+        let flag=std::sync::Arc::new(AtomicBool::new(false));
+        *self.0.lock().map_err(err)?=Some((id,flag.clone()));Ok(flag)
+    }
+    pub fn cancel(&self,id:&str)->Result<()> {
+        if let Some((active,flag))=&*self.0.lock().map_err(err)? {if active==id {flag.store(true,Ordering::SeqCst);}}Ok(())
+    }
+    pub fn finish(&self,id:&str) {if let Ok(mut active)=self.0.lock(){if active.as_ref().is_some_and(|(key,_)|key==id){*active=None;}}}
+}
+fn check_cancelled(flag:&AtomicBool)->Result<()> {
+    if flag.load(Ordering::SeqCst){Err("Download cancelled.".into())}else{Ok(())}
+}
+
 #[derive(Deserialize)]
 pub struct Request {
     pub url: String,
@@ -158,7 +175,9 @@ pub fn existing(path: &Path, request: &Request) -> Result<Option<Saved>> {
     }
     Ok(None)
 }
+#[cfg(test)]
 struct Temporary(PathBuf);
+#[cfg(test)]
 impl Drop for Temporary {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
@@ -204,38 +223,33 @@ fn error_message(raw: &str) -> String {
         "The website did not provide a downloadable video. It may be removed, restricted, or temporarily blocked. Try again or use another link.".into()
     }
 }
-pub fn run(
+#[cfg(test)]
+pub fn run(db_path:&Path,downloader:&Path,ffmpeg:&Path,request:Request,cancelled:&AtomicBool,notify:&mut impl FnMut(Progress))->Result<Saved>{
+    run_locked(db_path,downloader,ffmpeg,request,cancelled,notify,&std::sync::Mutex::new(()))
+}
+pub fn run_locked(
     db_path: &Path,
     downloader: &Path,
     ffmpeg: &Path,
     mut request: Request,
     cancelled: &AtomicBool,
     notify: &mut impl FnMut(Progress),
+    lock: &std::sync::Mutex<()>,
 ) -> Result<Saved> {
     request.url = normalize(&request.url)?;
-    if let Some(saved) = existing(db_path, &request)? {
-        return Ok(saved);
+    {
+        let _guard=lock.lock().map_err(err)?;
+        if cancelled.load(Ordering::SeqCst){return Err("Download cancelled.".into());}
+        crate::file_moves::reconcile(db_path)?;
+        if let Some(saved)=existing(db_path,&request)?{return Ok(saved);}
     }
     if !downloader.is_file() {
         return Err("yt-dlp is missing. Reinstall the updated Design app.".into());
     }
-    let root = sources::root(&db::connect(db_path)?, "Videos")?
-        .canonicalize()
-        .map_err(err)?;
-    let staging = db_path
-        .parent()
-        .ok_or("Missing data folder")?
-        .join("video-downloads");
-    fs::create_dir_all(&staging).map_err(err)?;
-    let staging = staging.canonicalize().map_err(err)?;
-    let job = staging.join(content::nonce().to_string());
-    fs::create_dir(&job).map_err(err)?;
-    let job = job.canonicalize().map_err(err)?;
-    if !job.starts_with(&staging) {
-        return Err("Download staging must stay inside the app data folder.".into());
-    }
-    let job = Temporary(job);
+
+    let job = crate::download_staging::Staging::create(db_path)?;
     notify(Progress::phase("connecting"));
+    if cancelled.load(Ordering::SeqCst){return Err("Download cancelled.".into());}
     let mut command = Command::new(downloader);
     hidden(&mut command);
     command
@@ -270,15 +284,13 @@ pub fn run(
         ])
         .arg(ffmpeg)
         .arg("-P")
-        .arg(&job.0)
+        .arg(&job.path)
         .args(["-o", "%(id)s.%(ext)s", "--"])
         .arg(&request.url)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("Could not start yt-dlp: {e}"))?;
+    let (tree,mut child)=crate::download_process::Tree::spawn(&command)?;
     let (tx, rx) = mpsc::channel();
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
@@ -308,6 +320,7 @@ pub fn run(
     let mut last_error = String::new();
     let status = loop {
         if cancelled.load(Ordering::SeqCst) || started.elapsed() > Duration::from_secs(60 * 60) {
+            tree.terminate();
             stop(&mut child);
             let _ = out.join();
             let _ = errors.join();
@@ -325,6 +338,7 @@ pub fn run(
             break status;
         }
     };
+    tree.terminate(); // Stray descendants must not keep stdout/stderr pipes open.
     let _ = out.join();
     let _ = errors.join();
     for line in rx.try_iter() {
@@ -340,7 +354,7 @@ pub fn run(
     let file = PathBuf::from(filepath.ok_or("yt-dlp did not return a video file.")?)
         .canonicalize()
         .map_err(err)?;
-    if !file.starts_with(&job.0)
+    if !file.starts_with(&job.path)
         || library::kind(&file) != Some("video")
         || fs::metadata(&file).map_err(err)?.len() == 0
     {
@@ -357,7 +371,11 @@ pub fn run(
         })
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "Downloaded video".into());
-    import(db_path, &root, &file, &title, &request)
+    let _guard=lock.lock().map_err(err)?;
+    if cancelled.load(Ordering::SeqCst){return Err("Download cancelled.".into());}
+    if let Some(saved)=existing(db_path,&request)?{return Ok(saved);}
+    let root=sources::root(&db::connect(db_path)?,"Videos")?.canonicalize().map_err(err)?;
+    import_cancelled(db_path, &root, &file, &title, &request, cancelled)
 }
 fn consume(
     line: &str,
@@ -380,7 +398,15 @@ pub fn import(
     title: &str,
     request: &Request,
 ) -> Result<Saved> {
-    labels(db_path, request)?;
+    import_cancelled(db_path,root,file,title,request,&AtomicBool::new(false))
+}
+pub fn import_cancelled(db_path:&Path,root:&Path,file:&Path,title:&str,request:&Request,cancelled:&AtomicBool)->Result<Saved> {
+    crate::file_moves::reconcile(db_path)?;
+    import_inner(db_path,root,file,title,request,cancelled).map_err(|error|crate::file_moves::rollback_error(db_path,error))
+}
+fn import_inner(db_path:&Path,root:&Path,file:&Path,title:&str,request:&Request,cancelled:&AtomicBool)->Result<Saved> {
+    check_cancelled(cancelled)?;
+    if let Some(saved)=existing(db_path,request)?{return Ok(saved);}
     let directory = root.join("Downloads");
     fs::create_dir_all(&directory).map_err(err)?;
     let directory = directory.canonicalize().map_err(err)?;
@@ -392,16 +418,21 @@ pub fn import(
         content::nonce(),
         file.file_name().unwrap_or_default().to_string_lossy()
     ));
-    let temporary = destination.with_extension("pending");
-    fs::copy(file, &temporary).map_err(err)?;
-    fs::rename(&temporary, &destination).map_err(err)?;
-    let modified = fs::metadata(&destination)
+    let expected=content::hash_file(file)?;
+    let temporary=tempfile::NamedTempFile::new_in(&directory).map_err(err)?;
+    fs::copy(file,temporary.path()).map_err(err)?;
+    if content::hash_file(temporary.path())?!=expected || content::hash_file(file)?!=expected{return Err("Downloaded file changed while saving.".into());}
+    temporary.as_file().sync_all().map_err(err)?;
+    check_cancelled(cancelled)?;
+    crate::import_copies::record(&db::connect(db_path)?,&destination,temporary.path(),&expected)?;
+    save_checkpoint("download.after_copy_intent",cancelled);
+    temporary.persist_noclobber(&destination).map_err(err)?;
+    save_checkpoint("download.after_publish",cancelled);
+    check_cancelled(cancelled)?;
+    let modified = crate::timestamps::unix_millis_or_zero(fs::metadata(&destination)
         .map_err(err)?
         .modified()
-        .map_err(err)?
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
+        .map_err(err)?);
     let mut db = db::connect(db_path)?;
     let tx = db.transaction().map_err(err)?;
     tx.execute("INSERT INTO items(path,name,kind,source,modified,added,source_url) VALUES(?,?,'video','Videos/Downloads',?,?,?) ON CONFLICT(path) DO UPDATE SET name=excluded.name,source_url=excluded.source_url,archived=0,missing=0",params![destination.to_string_lossy(),title,modified,db::now(),request.url]).map_err(err)?;
@@ -413,6 +444,46 @@ pub fn import(
         )
         .map_err(err)?;
     content::attach(&tx, id, &capture(request))?;
+    check_cancelled(cancelled)?;
+    save_checkpoint("download.before_commit",cancelled);
+    check_cancelled(cancelled)?;
+    crate::import_copies::finish(&tx)?;
     tx.commit().map_err(err)?;
+    // A cancellation arriving after commit must not report a saved video as cancelled.
+    save_checkpoint("download.after_commit",cancelled);
     Ok(Saved { id, reused: false })
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+ use super::*;
+ #[test]
+ #[ignore = "Isolated downloader cancellation test worker"]
+ fn waiting_download_worker(){
+  let ready=std::env::var_os("DESIGN_TEST_DOWNLOAD_READY").expect("Parent fixture required");
+  fs::write(ready,b"ready").unwrap();loop{std::thread::sleep(Duration::from_secs(1));}
+ }
+ #[test] fn cancelling_a_running_child_reaps_it_and_cleans_partial_files(){
+  let temp=tempfile::tempdir().unwrap();let folder=temp.path().join("job");fs::create_dir(&folder).unwrap();
+  let ready=temp.path().join("ready");
+  let mut command=Command::new(std::env::current_exe().unwrap());hidden(&mut command);
+  let mut child=command.args(["--exact","download::cancellation_tests::waiting_download_worker","--ignored"]).env("DESIGN_TEST_DOWNLOAD_READY",&ready).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+  let started=Instant::now();while !ready.exists()&&started.elapsed()<Duration::from_secs(10){std::thread::sleep(Duration::from_millis(20));}
+  let was_ready=ready.exists();
+  {let job=Temporary(folder.clone());fs::write(job.0.join("video.part"),b"partial bytes").unwrap();stop(&mut child);}
+  assert!(was_ready);assert!(child.try_wait().unwrap().is_some());assert!(!folder.exists());
+ }
+ #[test] fn late_cancel_cannot_cancel_the_next_job(){
+  let state=Cancellation::default();let first=state.start("first".into()).unwrap();state.cancel("first").unwrap();assert!(first.load(Ordering::SeqCst));
+  state.finish("first");let second=state.start("second".into()).unwrap();state.cancel("first").unwrap();state.finish("first");assert!(!second.load(Ordering::SeqCst));state.cancel("second").unwrap();assert!(second.load(Ordering::SeqCst));
+ }
+}
+
+fn save_checkpoint(point:&str,_cancelled:&AtomicBool){
+ #[cfg(test)]
+ if std::env::var("DESIGN_TEST_OPERATION").ok().as_deref()==Some("download_cancel") {
+  if std::env::var("DESIGN_TEST_CRASH_POINT").ok().as_deref()==Some(point){_cancelled.store(true,Ordering::SeqCst);}
+  return;
+ }
+ crate::file_moves::checkpoint(point);
 }

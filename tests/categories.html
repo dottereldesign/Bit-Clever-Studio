@@ -33,7 +33,7 @@ try{
  category('All Components').click();await until(()=>cards().length===2,'All Components includes legacy Web Design');
  category('Components / Uncategorised').click();await until(()=>cards().length===2,'Uncategorised components');
  for(const name of ['General','Projects','Categories','Components']){
-   const toggle=button(name==="Categories"?"Design Inspo":name==="Components"?"App Components":name);toggle.click();await until(()=>toggle.getAttribute('aria-expanded')==='false','Collapse '+name);
+   const toggle=button(name==="Categories"?"Design Inspo":name==="Components"?"App Components":name);if(toggle.getAttribute('aria-expanded')!=='true'){toggle.click();await until(()=>toggle.getAttribute('aria-expanded')==='true','Initially expand '+name);}toggle.click();await until(()=>toggle.getAttribute('aria-expanded')==='false','Collapse '+name);
    assert(localStorage.getItem('sidebar-open:'+name)==='false','Remember '+name);
    toggle.click();await until(()=>toggle.getAttribute('aria-expanded')==='true','Expand '+name);
  }
@@ -141,7 +141,7 @@ try{
  const hotkey=(key,ctrlKey=false)=>document.body.dispatchEvent(new KeyboardEvent('keydown',{key,ctrlKey,bubbles:true,cancelable:true}));
  hotkey('Escape');await pause(100);
  for(const key of ['k','f','/']){hotkey(key,key!=='/');await until(()=>document.activeElement?.getAttribute('aria-label')==='Search library'&&!document.querySelector('.search-popup').hidden,'Search shortcut '+key);document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await until(()=>document.querySelector('.search-popup').hidden,'Dismiss search');}
- hotkey(',',true);await until(()=>document.querySelector('[aria-label="Keyboard shortcuts"]'),'Settings shortcut');assert(document.querySelector('[aria-label="Keyboard shortcuts"]').textContent.includes('Ctrl K'),'Search shortcut missing in settings');hotkey('Escape');
+ hotkey(',',true);await until(()=>document.querySelector('#settings-tab-help'),'Settings shortcut');document.querySelector('#settings-tab-help').click();await until(()=>document.querySelector('[aria-label="Keyboard shortcuts"]'),'Help tab');assert(document.querySelector('[aria-label="Keyboard shortcuts"]').textContent.includes('Ctrl K'),'Search shortcut missing in settings');hotkey('Escape');
  checks.push('Storage lives in the header; search is hidden until /, Ctrl F or Ctrl K; Ctrl comma opens Settings with keyboard shortcuts');
  document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks,width:innerWidth});
 }catch(error){document.getElementById('check-result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack,checks,searchHidden:document.querySelector(".search-popup")?.hidden,focus:document.activeElement?.outerHTML.slice(0,250),dialogs:[...document.querySelectorAll("[role=dialog],.modal,.item-menu")].map(n=>n.textContent.slice(0,100)),calls:calls.slice(-6)});}

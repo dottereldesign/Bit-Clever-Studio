@@ -1,3 +1,4 @@
+import PreferenceRecovery from './PreferenceRecovery';
 import {record} from './diagnostics';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {Search,LayoutGrid,SlidersHorizontal,FolderOpen,Archive,Plug,Keyboard,Activity,Info,ArrowUpRight} from 'lucide-react';
@@ -22,7 +23,7 @@ export default function SettingsHub({library,backup,connections,help,diagnostics
  <section id="settings-section-panel" role="tabpanel" aria-labelledby={`settings-tab-${tab}`} tabIndex={0} className="settings-section-panel" data-section={tab}>
  {query.trim()?<><header><h3>Search results</h3><p>{matches.length} matching sections</p></header>{matches.length?cards(matches):<p>No settings found. Try “backup”, “calendar” or “library”.</p>}</>:<><header><h3>{current.label}</h3><p>{current.description}</p></header>
  {tab==='overview'&&cards(sections.filter(s=>s.id!=='overview'))}
- {tab==='general'&&<div className="settings-preferences"><label><span>Compact spacing<small>Fit more controls on screen.</small></span><input aria-label="Compact Settings spacing" type="checkbox" checked={p.compact} onChange={e=>set({...p,compact:e.target.checked})}/></label><label><span>Remember the last Settings tab<small>Otherwise, Settings opens on Overview.</small></span><input aria-label="Remember Settings tab" type="checkbox" checked={p.remember} onChange={e=>set({...p,remember:e.target.checked})}/></label><label><span>Reduce motion<small>Use quieter transitions throughout the app.</small></span><input aria-label="Reduce app motion" type="checkbox" checked={reduced} onChange={e=>setReduced(e.target.checked)}/></label><p className="settings-note">App startup opens Home with sidebar sections collapsed.</p></div>}
+ {tab==='general'&&<div className="settings-preferences"><label><span>Compact spacing<small>Fit more controls on screen.</small></span><input aria-label="Compact Settings spacing" type="checkbox" checked={p.compact} onChange={e=>set({...p,compact:e.target.checked})}/></label><label><span>Remember the last Settings tab<small>Otherwise, Settings opens on Overview.</small></span><input aria-label="Remember Settings tab" type="checkbox" checked={p.remember} onChange={e=>set({...p,remember:e.target.checked})}/></label><label><span>Reduce motion<small>Use quieter transitions throughout the app.</small></span><input aria-label="Reduce app motion" type="checkbox" checked={reduced} onChange={e=>setReduced(e.target.checked)}/></label><p className="settings-note">App startup opens Home with sidebar sections collapsed.</p><PreferenceRecovery/></div>}
  {tab==='library'&&library}{tab==='backup'&&backup}{tab==='connections'&&connections}{tab==='help'&&help}{tab==='diagnostics'&&diagnostics}{tab==='about'&&about}
 
  </>}

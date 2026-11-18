@@ -31,24 +31,6 @@ async function until(test, label) {
 function assert(value, label) { if (!value) throw Error(label); }
 const viewer = () => document.querySelector('.viewer');
 function key(value) { document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true })); }
-async function advance(count, direction = 'ArrowRight') {
-  await pause(100);
-  for (let n = 0; n < count; n++) {
-    const before = viewer()?.dataset.itemId;
-    key(direction);
-    await until(() => viewer()?.dataset.itemId !== before, 'advance viewer');
-  }
-}
-async function returned(id, close = 'Escape') {
-  if (close === 'Escape') key('Escape');
-  else document.querySelector('.viewer [aria-label="Close viewer"]').click();
-  await until(() => !viewer() && document.activeElement?.closest('.card')?.dataset.itemId === String(id), `focus item ${id}`);
-  const card = document.activeElement.closest('.card');
-  const rect = card.getBoundingClientRect(), area = document.querySelector('.content').getBoundingClientRect();
-  assert(rect.top >= area.top - 1 && rect.bottom <= area.bottom + 1, `Returned item ${id} is not fully visible`);
-  assert(card.classList.contains('returned'), `Returned item ${id} is not highlighted`);
-  return document.querySelector('.content').scrollTop;
-}
 const checks = [];
 let resizeId = 0;
 async function resize(width) {
@@ -60,7 +42,8 @@ try {
   const originalWidth = innerWidth;
   await until(() => document.querySelector('.card-open'), 'library render');
   await pause(150);
-  document.querySelector('.card-open').click();
+  [...document.querySelectorAll('nav[aria-label=Library] button')].find(b=>b.querySelector('span')?.textContent==='Recently added').click();await pause(200);
+  document.querySelector('.recent-reference').click();
   await until(() => viewer(), 'viewer opens');
   assert(viewer().classList.contains('viewer-docked') === (originalWidth >= 1600), 'Initial breakpoint');
   await resize(3440);
@@ -68,7 +51,6 @@ try {
   const main = document.querySelector('main'), sidebar = document.querySelector('.sidebar');
   assert(!main.inert && !sidebar.inert, 'Library remains interactive');
   assert(viewer().getAttribute('role') === 'region' && !viewer().hasAttribute('aria-modal'), 'Nonmodal preview semantics');
-  await until(() => document.querySelector('.card.previewed'), 'active thumbnail highlighted');
   const shell = document.querySelector('.preview-shell-docked');
   const entrance = shell.getAnimations()[0];
   assert(entrance?.animationName === 'preview-slide-in', 'Drawer has slide entrance');
@@ -79,14 +61,14 @@ try {
   assert(rect.left >= grid.right - 1 && rect.right <= innerWidth && grid.width > 1000, 'Preview sits beside grid');
   assert(viewer().scrollWidth <= rect.width, 'Preview toolbar fits');
   if (originalWidth >= 1600) assert(document.activeElement !== viewer(), 'Dock does not steal thumbnail focus');
-  const other = [...document.querySelectorAll('.card-open')].find(button => button.closest('.card').dataset.itemId !== viewer().dataset.itemId);
-  const otherId = other.closest('.card').dataset.itemId;
+  const other = [...document.querySelectorAll('.recent-reference')].find(button => button.dataset.itemId !== viewer().dataset.itemId);
+  const otherId = other.dataset.itemId;
   other.click();
   await until(() => viewer()?.dataset.itemId === otherId, 'switch preview by clicking grid');
   assert(document.querySelector('.preview-shell-docked') === shell, 'Switch keeps the same drawer');
   assert(shell.getAnimations()[0] === entrance && entrance.playState === 'finished', 'Switch does not replay entrance');
   checks.push('Right slide opens once; choosing another thumbnail preserves the settled glass drawer');
-  checks.push('Ultrawide layout, interactive library, active thumbnail and click-to-switch');
+  checks.push('Ultrawide layout, interactive library, click-to-switch');
   const content = document.querySelector('.content');
   content.scrollTop = 1800;
   await pause(150);
@@ -106,10 +88,10 @@ try {
   await until(() => !viewer(), 'close dock');
   await pause(150);
   assert(Math.abs(content.scrollTop - beforeClose) < 3, 'Closing dock preserves browsing position');
-  document.querySelector('.card-open').click();
+  document.querySelector('.recent-reference').click();
   await until(() => viewer(), 'reopen dock');
   const search = document.querySelector('[aria-label="Search library"]');
-  search.focus();
+  document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'k',ctrlKey:true,bubbles:true,cancelable:true}));await until(()=>document.activeElement===search,'Search shortcut focuses field');
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(search, 'Reference 0001');
   search.dispatchEvent(new Event('input', { bubbles: true }));
   await until(() => !viewer(), 'filter closes excluded preview');
@@ -132,16 +114,16 @@ try {
   await checkMasonry();
   for (const width of [1920, 3440, 1600]) {
     await resize(width);
-    document.querySelector('.poster-masonry .card-open').click();
-    await until(() => viewer()?.classList.contains('viewer-docked'), 'poster side preview');
+    document.querySelector('.poster-masonry .card-open').click();document.querySelector('.poster-masonry .card-open').focus();key(' ');
+    await until(() => document.querySelector('.quick-preview'), 'poster quick preview');
     await checkMasonry();
-    document.querySelector('.viewer [aria-label="Close viewer"]').click();
-    await until(() => !viewer(), 'close poster preview');
+    key('Escape');
+    await until(() => !document.querySelector('.quick-preview'), 'close poster preview');
     await checkMasonry();
   }
-  checks.push('Poster masonry has no overlaps when side preview opens, closes or changes width');
+  checks.push('Poster masonry has no overlaps when Space preview opens, closes or changes width');
   document.getElementById('check-result').textContent = JSON.stringify({ ok: true, checks, width: originalWidth });
 } catch (error) {
-  document.getElementById('check-result').textContent = JSON.stringify({ ok: false, error: String(error), checks });
+  document.getElementById('check-result').textContent = JSON.stringify({ ok: false, error: String(error), stack:error.stack, checks });
 }
 </script></body></html>

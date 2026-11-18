@@ -20,7 +20,7 @@ pub struct Fingerprint {
     pub size: i64,
     pub modified: i64,
 }
-fn hash_file(path: &Path) -> Result<String> {
+pub(crate) fn hash_file(path: &Path) -> Result<String> {
     let mut file = fs::File::open(path).map_err(err)?;
     let mut hash = Sha256::new();
     let mut buffer = vec![0; 1024 * 1024];
@@ -35,12 +35,9 @@ fn hash_file(path: &Path) -> Result<String> {
 }
 pub fn fingerprint(path: &Path) -> Result<Fingerprint> {
     let before = fs::metadata(path).map_err(err)?;
-    let modified = before
+    let modified = crate::timestamps::unix_millis_or_zero(before
         .modified()
-        .map_err(err)?
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64;
+        .map_err(err)?);
     let file = hash_file(path)?;
     let pixels = if library::kind(path) == Some("image") {
         image::ImageReader::open(path)
@@ -149,8 +146,7 @@ pub fn index_with_progress(
         let time = meta
             .modified()
             .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|t| t.as_millis() as i64);
+            .and_then(crate::timestamps::unix_millis);
         if size == Some(meta.len() as i64) && modified == time {
             continue;
         }
@@ -367,6 +363,10 @@ pub fn capture(db_path: &Path, c: Capture) -> Result<CaptureResult> {
     capture_with_progress(db_path,c,&mut |_|{})
 }
 pub fn capture_with_progress(db_path: &Path, c: Capture, progress:&mut impl FnMut(DuplicateProgress)) -> Result<CaptureResult> {
+    crate::file_moves::reconcile(db_path)?;
+    capture_inner(db_path,c,progress).map_err(|error|crate::file_moves::rollback_error(db_path,error))
+}
+fn capture_inner(db_path: &Path, c: Capture, progress:&mut impl FnMut(DuplicateProgress)) -> Result<CaptureResult> {
     // Reject an unsupported destination before importing any part of a batch.
     if c.projects.is_empty() && c.studio.is_none() && c.files.iter().any(|file| library::kind(Path::new(&file.path)).is_none()) {
         return Err("Add these files to a project. Design Inspo and App Components accept images and videos.".into());
@@ -426,8 +426,14 @@ pub fn capture_with_progress(db_path: &Path, c: Capture, progress:&mut impl FnMu
             let directory = db_path.parent().ok_or("Missing data folder")?.join("link-thumbnails");
             fs::create_dir_all(&directory).map_err(err)?;
             let path = directory.join(format!("{}.png", nonce()));
+            let temporary=tempfile::NamedTempFile::new_in(&directory).map_err(err)?;
+            if destination=="websites"{image.save_with_format(temporary.path(),image::ImageFormat::Png).map_err(err)?;}else{image.thumbnail(image.width().min(1600), image.height().min(1600)).save_with_format(temporary.path(),image::ImageFormat::Png).map_err(err)?;}
+            temporary.as_file().sync_all().map_err(err)?;
+            crate::import_copies::record(&db,&path,temporary.path(),&hash_file(temporary.path())?)?;
+            crate::file_moves::checkpoint("thumbnail.after_intent");
+            temporary.persist_noclobber(&path).map_err(err)?;
+            crate::file_moves::checkpoint("thumbnail.after_publish");
             thumbnail.0 = Some(path.clone());
-            if destination=="websites"{image.save(&path).map_err(err)?;}else{image.thumbnail(image.width().min(1600), image.height().min(1600)).save(&path).map_err(err)?;}
         }
         let mut stmt = db
             .prepare("SELECT id,path FROM items WHERE kind='link'")
@@ -467,7 +473,7 @@ pub fn capture_with_progress(db_path: &Path, c: Capture, progress:&mut impl FnMu
             result.added = 1;
             tx.last_insert_rowid()
         };
-        if existing.is_none()&&c.studio.is_some(){tx.execute("UPDATE items SET project_only=1,source='Studio' WHERE id=?",[id]).map_err(err)?;}
+        if existing.is_none()&&(c.studio.is_some()||(c.project_only&&!c.projects.is_empty())){tx.execute("UPDATE items SET project_only=1,source='Studio' WHERE id=?",[id]).map_err(err)?;}
         let mut patches=attachment_history(&tx,id,&c)?;
         if existing.is_none(){patches.push(crate::history::Patch::Archived(id,true));}
         if existing.is_some(){
@@ -507,8 +513,12 @@ pub fn capture_with_progress(db_path: &Path, c: Capture, progress:&mut impl FnMu
             let label=result.move_label.clone().unwrap_or_else(||if existing.is_some(){"Update saved link"}else{"Create link"}.to_owned());
             crate::history::record(&tx,&label,patches)?;result.history_labels.push(label);
         }
-        crate::clients::end(&tx)?;tx.commit().map_err(err)?;
+        crate::clients::end(&tx)?;
+        crate::file_moves::checkpoint("thumbnail.before_commit");
+        crate::import_copies::finish(&tx)?;
+        tx.commit().map_err(err)?;
         thumbnail.0.take();
+        crate::file_moves::checkpoint("thumbnail.after_commit");
         result.ids.push(id);
         return Ok(result);
     }
@@ -551,21 +561,21 @@ pub fn capture_with_progress(db_path: &Path, c: Capture, progress:&mut impl FnMu
             let mut used=fs::read_dir(&destination).map_err(err)?.filter_map(|e|e.ok()).map(|e|format!("/{0}",e.file_name().to_string_lossy()).to_lowercase()).collect();
             destination.join(crate::library_export::allocate_filename(if c.name.trim().is_empty(){Path::new(original).file_stem().and_then(|s|s.to_str()).unwrap_or("Saved Image")}else{&c.name},Path::new(original),"",&mut used))
         }else{destination.join(format!("{}-{original}", nonce()))};
-        let temporary = target.with_extension("pending");
-        fs::copy(&path, &temporary).map_err(err)?;
-        if hash_file(&temporary)? != fp.file {
-            let _ = fs::remove_file(&temporary);
+        let temporary = tempfile::NamedTempFile::new_in(&destination).map_err(err)?;
+        fs::copy(&path, temporary.path()).map_err(err)?;
+        if hash_file(temporary.path())? != fp.file || hash_file(&path)? != fp.file {
             return Err("The source file changed during capture. Try again.".into());
         }
-        fs::rename(&temporary, &target).map_err(err)?;
+        temporary.as_file().sync_all().map_err(err)?;
+        crate::import_copies::record(&db,&target,temporary.path(),&fp.file)?;
+        crate::file_moves::checkpoint("capture.after_copy_intent");
+        temporary.persist_noclobber(&target).map_err(err)?;
+        crate::file_moves::checkpoint("capture.after_publish");
         let target = target.canonicalize().map_err(err)?;
-        let modified = fs::metadata(&target)
+        let modified = crate::timestamps::unix_millis_or_zero(fs::metadata(&target)
             .map_err(err)?
             .modified()
-            .map_err(err)?
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as i64;
+            .map_err(err)?);
         let name = if c.files.len() == 1 && !c.name.trim().is_empty() {
             c.name.trim().to_owned()
         } else {
@@ -609,7 +619,11 @@ pub fn capture_with_progress(db_path: &Path, c: Capture, progress:&mut impl FnMu
         store(&tx, id, &Fingerprint { modified, ..fp })?;
         crate::history::record(&tx,"Add reference",patches)?;
         result.history_labels.push("Add reference".to_owned());
-        crate::clients::end(&tx)?;tx.commit().map_err(err)?;
+        crate::clients::end(&tx)?;
+        crate::file_moves::checkpoint("capture.before_commit");
+        crate::import_copies::finish(&tx)?;
+        tx.commit().map_err(err)?;
+        crate::file_moves::checkpoint("capture.after_commit");
         result.ids.push(id);
         result.added += 1;
         report(position+1,input.name.clone());
@@ -771,29 +785,8 @@ pub fn clipboard_files(paths: Vec<PathBuf>) -> Result<ClipboardContent> {
         url: String::new(),
     })
 }
-fn move_file(source: &Path, destination: &Path) -> Result<()> {
-    if destination.exists() {
-        return Err("The destination already exists.".into());
-    }
-    if fs::rename(source, destination).is_ok() {
-        return Ok(());
-    }
-    let mut input = fs::File::open(source).map_err(err)?;
-    let mut output = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(destination)
-        .map_err(err)?;
-    std::io::copy(&mut input, &mut output).map_err(err)?;
-    output.sync_all().map_err(err)?;
-    drop(output);
-    drop(input);
-    if hash_file(source)? != hash_file(destination)? {
-        return Err("Copy verification failed. The original was kept.".into());
-    }
-    fs::remove_file(source).map_err(err)
-}
 pub fn remove_duplicates(db_path: &Path, data: &Path, keeper: i64, ids: Vec<i64>) -> Result<usize> {
+    crate::file_moves::reconcile(db_path)?;
     if ids.contains(&keeper) {
         return Err("The retained copy cannot be removed.".into());
     }
@@ -813,13 +806,17 @@ pub fn remove_duplicates(db_path: &Path, data: &Path, keeper: i64, ids: Vec<i64>
         if id == keeper {
             return Err("The retained copy cannot be removed.".into());
         }
-        let original: String = db
+        let original: Option<String> = db
             .query_row(
                 "SELECT path FROM items WHERE id=? AND archived=0 AND kind!='link'",
                 [id],
                 |r| r.get(0),
-            )
-            .map_err(err)?;
+            ).optional().map_err(err)?;
+        let Some(original)=original else {
+            let already_removed:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM duplicate_recovery WHERE item_id=? AND keeper_id=?)",params![id,keeper],|r|r.get(0)).map_err(err)?;
+            if already_removed {continue;}
+            return Err("A selected duplicate is unavailable. Scan again.".into());
+        };
         let fp = fingerprint(Path::new(&original))?;
         if fp.file != kept_fp.file && !(fp.pixels.is_some() && fp.pixels == kept_fp.pixels) {
             return Err("These files are no longer identical. Scan again.".into());
@@ -832,10 +829,30 @@ pub fn remove_duplicates(db_path: &Path, data: &Path, keeper: i64, ids: Vec<i64>
                 .unwrap_or_default()
                 .to_string_lossy()
         ));
+        crate::file_moves::record(&db,id,Path::new(&original),&recovery)?;
+        crate::file_moves::checkpoint("remove.after_intent");
+        let result=(|| -> Result<()> {
         let tx = db.transaction().map_err(err)?;
         tx.execute("INSERT INTO item_projects(item_id,label_id,favourite) SELECT ?,label_id,favourite FROM item_projects WHERE item_id=? ON CONFLICT(item_id,label_id) DO UPDATE SET favourite=MAX(favourite,excluded.favourite)",params![keeper,id]).map_err(err)?;
         tx.execute("INSERT OR IGNORE INTO item_tags(item_id,label_id) SELECT ?,label_id FROM item_tags WHERE item_id=?",params![keeper,id]).map_err(err)?;
         tx.execute("INSERT OR IGNORE INTO item_project_folders(item_id,folder_id) SELECT ?,folder_id FROM item_project_folders WHERE item_id=?",params![keeper,id]).map_err(err)?;
+        for table in ["item_design_folders","item_component_folders"] {
+            tx.execute(&format!("INSERT OR IGNORE INTO {table}(item_id,name) SELECT ?,name FROM {table} WHERE item_id=?"),params![keeper,id]).map_err(err)?;
+        }
+        tx.execute("INSERT INTO category_arrivals(item_id,name,added) SELECT ?,name,added FROM category_arrivals WHERE item_id=? ON CONFLICT(item_id,name) DO UPDATE SET added=MAX(added,excluded.added)",params![keeper,id]).map_err(err)?;
+        for mut overview in crate::project_overview::load(&tx)? {
+            if let Some(nodes)=&mut overview.moodboard {
+                let mut changed=false;
+                for node in nodes {if node.item_id==Some(id){node.item_id=Some(keeper);changed=true;}}
+                if changed {crate::project_overview::save(&tx,&overview)?;}
+            }
+        }
+        for mut record in crate::client_records::load(&tx)?.records {
+            if record.files.contains(&id) {
+                for file in &mut record.files {if *file==id {*file=keeper;}}
+                record.files.sort();record.files.dedup();crate::client_records::save_record(&tx,&record)?;
+            }
+        }
         crate::studio::replace_item(&tx,id,keeper)?;
         tx.execute("UPDATE items SET source_url=(SELECT source_url FROM items WHERE id=?) WHERE id=? AND source_url=''",params![id,keeper]).map_err(err)?;
         tx.execute(
@@ -845,11 +862,13 @@ pub fn remove_duplicates(db_path: &Path, data: &Path, keeper: i64, ids: Vec<i64>
         .map_err(err)?;
         tx.execute("UPDATE items SET archived=1 WHERE id=?", [id])
             .map_err(err)?;
-        move_file(Path::new(&original), &recovery)?;
-        if let Err(e) = tx.commit() {
-            let _ = move_file(&recovery, Path::new(&original));
-            return Err(err(e));
-        }
+        crate::file_moves::move_file(Path::new(&original), &recovery)?;
+        crate::file_moves::checkpoint("remove.after_move");
+        crate::file_moves::finish(&tx,id)?;
+        tx.commit().map_err(err)
+        })();
+        if let Err(error)=result {return Err(crate::file_moves::rollback_error(db_path,error));}
+        crate::file_moves::checkpoint("remove.after_commit");
         removed += 1;
     }
     Ok(removed)
@@ -877,27 +896,37 @@ pub fn recovery(db_path: &Path) -> Result<Vec<Recovery>> {
     Ok(rows)
 }
 pub fn restore(db_path: &Path, id: i64) -> Result<()> {
+    crate::file_moves::reconcile(db_path)?;
     let mut db = db::connect(db_path)?;
-    let (original, recovered): (String, String) = db
+    let recovery: Option<(String, String)> = db
         .query_row(
             "SELECT original_path,recovery_path FROM duplicate_recovery WHERE item_id=?",
             [id],
             |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .map_err(err)?;
+        ).optional().map_err(err)?;
+    let Some((original,recovered))=recovery else {
+        let active:Option<String>=db.query_row("SELECT path FROM items WHERE id=? AND archived=0 AND kind!='link'",[id],|r|r.get(0)).optional().map_err(err)?;
+        if active.is_some_and(|path|Path::new(&path).is_file()){return Ok(());}
+        return Err("The recovery item is unavailable. Reconnect its drive and retry.".into());
+    };
     if Path::new(&original).exists() {
         return Err("A file already exists at the original location.".into());
     }
+    crate::file_moves::record(&db,id,Path::new(&recovered),Path::new(&original))?;
+    crate::file_moves::checkpoint("restore.after_intent");
+    let result=(|| -> Result<()> {
     let tx = db.transaction().map_err(err)?;
     tx.execute("UPDATE items SET archived=0,missing=0 WHERE id=?", [id])
         .map_err(err)?;
     tx.execute("DELETE FROM duplicate_recovery WHERE item_id=?", [id])
         .map_err(err)?;
-    move_file(Path::new(&recovered), Path::new(&original))?;
-    if let Err(e) = tx.commit() {
-        let _ = move_file(Path::new(&original), Path::new(&recovered));
-        return Err(err(e));
-    }
+    crate::file_moves::move_file(Path::new(&recovered), Path::new(&original))?;
+    crate::file_moves::checkpoint("restore.after_move");
+    crate::file_moves::finish(&tx,id)?;
+    tx.commit().map_err(err)
+    })();
+    if let Err(error)=result {return Err(crate::file_moves::rollback_error(db_path,error));}
+    crate::file_moves::checkpoint("restore.after_commit");
     Ok(())
 }
 

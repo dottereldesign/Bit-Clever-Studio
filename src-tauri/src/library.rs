@@ -26,11 +26,13 @@ pub fn kind(path: &Path) -> Option<&'static str> {
     }
 }
 pub fn scan(db_path: &Path, root: &Path) -> Result<usize> {
+    crate::file_moves::reconcile(db_path)?;
     let count=scan_named(db_path, root, "")?;
     refresh_missing(db_path)?;
     Ok(count)
 }
 pub fn scan_all(db_path: &Path) -> Result<usize> {
+    crate::file_moves::reconcile(db_path)?;
     let db = db::connect(db_path)?;
     let roots = crate::sources::roots(&db);
     if roots.is_empty() {
@@ -56,12 +58,9 @@ fn scan_named(db_path: &Path, root: &Path, prefix: &str) -> Result<usize> {
         let path = entry.path();
         let Some(kind) = kind(path) else { continue };
         let metadata = entry.metadata().map_err(err)?;
-        let modified = metadata
+        let modified = crate::timestamps::unix_millis_or_zero(metadata
             .modified()
-            .unwrap_or(std::time::UNIX_EPOCH)
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as i64;
+            .unwrap_or(std::time::UNIX_EPOCH));
         let relative = path.strip_prefix(&root).map_err(err)?;
         let relative_source = relative
             .parent()
@@ -197,7 +196,9 @@ pub fn media(db_path: &Path, cache: &Path, ffmpeg: &Path, id: i64, mode: &str) -
     // Rebuild old low-resolution image thumbnails lazily, without deleting caches
     // used by older app builds or invalidating expensive video previews.
     let version = if mode == "thumbnail" && kind != "video" { "v2" } else { "v1" };
-    let target = cache.join(format!("{version}-{id}-{modified}-{}-{mode}.{suffix}", meta.len()));
+    use sha2::{Digest, Sha256};
+    let identity = format!("{:x}", Sha256::digest(format!("{}:{}", db_path.display(), source.display()).as_bytes()));
+    let target = cache.join(format!("{identity}-{version}-{id}-{modified}-{}-{mode}.{suffix}", meta.len()));
     if target.is_file() {
         return Ok(target.to_string_lossy().into_owned());
     }

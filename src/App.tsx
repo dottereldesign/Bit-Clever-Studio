@@ -1,6 +1,10 @@
+import {createNativeHistoryTracker} from './nativeHistory';
+import BackupCoverage from "./BackupCoverage";
+import {createRefreshCoordinator} from "./refreshCoordinator";
 import {useAppTheme} from './AppTheme';
 import MyBusiness, {BusinessNavigation} from './MyBusiness';
 import SidebarTools from './SidebarTools';
+import SidebarGreenPicker from './SidebarGreenPicker';
 import AddContactDialog from './AddContactDialog';
 import type {WorkTarget} from './workNavigation';
 import SettingsHub from './SettingsHub';
@@ -358,11 +362,12 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
   const historyActions=useHistory();
   const undoing=historyActions.busy;
   const libRef=useRef(lib);libRef.current=lib;
-  const historyReady=useRef(false);
+  const [observeNativeHistory]=useState(createNativeHistoryTracker);
   const pasteBusy=useRef(false);
   const stopHoverRef=useRef<()=>void>(()=>{});
   const setHoverId=useCallback((_id:null)=>stopHoverRef.current(),[]);
   const [category,setCategory] = useState<string|null>(savedView?.category??null);
+  useEffect(()=>{if(category&&isComponent(category)&&category!==filingCategory(category))setCategory(filingCategory(category));},[category]);
   const [categoryUndo,setCategoryUndo] = useState<[number,string][]|null>(null);
   const categoryUndoNotice = useRef("");
   const [categoryDrop,setCategoryDrop] = useState<string|null>(null);
@@ -399,23 +404,18 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
   const searchRef = useRef<HTMLInputElement>(null),
     anchor = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const refresh = useCallback(async function refresh() {
-    const next = await loadLibrary();
+  const [refresh] = useState<() => Promise<Library>>(() => createRefreshCoordinator(loadLibrary, next => {
     // Observe native history itself, including imports/downloads completed by
     // other dialogs, rather than trying to enumerate every possible save path.
-    if(historyReady.current&&next.undo_entries){
-      const known=new Set(libRef.current.undo_entries?.map(e=>e.id));
-      for(const entry of next.undo_entries){if(!known.has(entry.id))appHistory.record({
-        label:entry.label,kind:'library',
-        undo:async()=>{await changeLibrary({action:'undo_organisation',value:entry.label});await refresh();},
-        redo:async()=>{await changeLibrary({action:'redo_organisation'});await refresh();},
-      });}
-    }
-    historyReady.current=true;
+    for(const entry of observeNativeHistory(next))appHistory.record({
+      label:entry.label,kind:'library',
+      undo:async()=>{await changeLibrary({action:'undo_organisation',value:entry.label});await refresh();},
+      redo:async()=>{await changeLibrary({action:'redo_organisation'});await refresh();},
+    });
     libRef.current=next;setLib(next);
+    setError(previous=>next.maintenance_warning??(previous.startsWith("Saved your changes, but library files")?"":previous));
     setReady(true);
-    return next;
-  }, []);
+  }));
   const clientInitialisation=useRef<{root:string;pending:Promise<unknown>}|null>(null);
   const initialiseClients=useCallback(()=>{
     const root=libRef.current.root;
@@ -442,11 +442,15 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
             void refresh().catch(report);
           },
         ],
-        ["scan-started", () => setLib((l) => ({ ...l, scanning: true }))],
+        ["scan-started", () => {
+          libRef.current={...libRef.current,scanning:true};setLib(libRef.current);
+          void refresh().catch(report);
+        }],
         [
           "scan-error",
           (e: { payload: unknown }) => {
-            setLib((l) => ({ ...l, scanning: false }));
+            libRef.current={...libRef.current,scanning:false};setLib(libRef.current);
+            void refresh().catch(report);
             report(e.payload);
           },
         ],
@@ -604,7 +608,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
     document.addEventListener('keydown',key,true);document.addEventListener('keyup',end,true);document.addEventListener('pointerdown',down,true);document.addEventListener('pointerup',end);document.addEventListener('pointercancel',end);window.addEventListener('blur',end);
     return ()=>{document.removeEventListener('keydown',key,true);document.removeEventListener('keyup',end,true);document.removeEventListener('pointerdown',down,true);document.removeEventListener('pointerup',end);document.removeEventListener('pointercancel',end);window.removeEventListener('blur',end);};
   },[]);
-  const componentFolders=useMemo(()=>[...new Set([...builtInComponentFolders,...(lib.categories??[]).filter(isComponent),...lib.items.flatMap(componentFoldersOf)])],[lib]);
+  const componentFolders=useMemo(()=>[...new Set([...builtInComponentFolders,...(lib.categories??[]).filter(isComponent),...lib.items.flatMap(componentFoldersOf)].map(filingCategory))],[lib]);
   const categories = useMemo(()=>libraryCategories(lib),[lib]);
   const categoryCounts = useMemo(() => new Map([...membershipIndex.categories].map(([name,items])=>[name,items.length])), [membershipIndex]);
   const generalCounts=useMemo(()=>{const counts=new Map<string,number>();for(const item of lib.items){counts.set(item.source,(counts.get(item.source)??0)+1);if(item.kind==='link'&&!isCollectionLink(item))counts.set('__links',(counts.get('__links')??0)+1);if(item.kind==='video'&&(item.source==='Videos'||item.source.startsWith('Videos/')))counts.set('__videos',(counts.get('__videos')??0)+1);}return counts;},[lib.items]);
@@ -805,7 +809,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
             paths: capture.files.map((f) => f.path),
           }).catch(report);
           setCapture(null);
-        } else if (duplicatesOpen) setDuplicatesOpen(false);
+        } else if (duplicatesOpen) return; // The native dialog owns Escape, including its busy guard.
         else if (modal) setModal(null);
         else if (viewer !== null) closeViewer();
         else setSelected(new Set());
@@ -855,7 +859,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
   },[searchOpen]);
   useEffect(()=>{
     const key=(e:KeyboardEvent)=>{
-      if(e.altKey||modal||capture||videoDialog||duplicatesOpen||removedOpen||libraryExportOpen||storageOpen||extraDialog||customTab||quickPreview!==null||itemMenu||viewer!==null)return;
+      if(e.altKey||modal||capture||videoDialog||duplicatesOpen||removedOpen||libraryExportOpen||storageOpen||extraDialog||customTab||quickPreview!==null||itemMenu||(viewer!==null&&!widePreview))return;
       if(document.querySelector('.project-dialog-backdrop')||(e.target as HTMLElement)?.closest('.link-rating,.project-folder-dialog'))return;
       const typing=(e.target as HTMLElement)?.closest("input,textarea,select,[contenteditable=true]");
       const command=e.ctrlKey||e.metaKey;
@@ -865,7 +869,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
       }
     };
     window.addEventListener("keydown",key);return()=>window.removeEventListener("keydown",key);
-  },[studioView,modal,capture,videoDialog,duplicatesOpen,removedOpen,libraryExportOpen,storageOpen,extraDialog,customTab,quickPreview,itemMenu,viewer,homeView,project,projectSection,generalEntry]);
+  },[studioView,modal,capture,videoDialog,duplicatesOpen,removedOpen,libraryExportOpen,storageOpen,extraDialog,customTab,quickPreview,itemMenu,viewer,widePreview,homeView,project,projectSection,generalEntry]);
   const showCaptureReceipt=useCallback((result:CaptureResult, next:Library, targetCategory:string|null, targetProject?:{project:number;folder:number|null})=>{
     const saved=next.items.filter(i=>result.ids.includes(i.id));
     if(!saved.length)return;
@@ -1365,6 +1369,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
       }}
       style={{ "--sidebar-width": `${sidebarWidth}px`,"--nav-row":`${navLayout.row}px`,"--nav-inset":`${navLayout.inset}px`,"--nav-radius":`${navLayout.radius}px`,"--nav-indent":navLayout.indent===undefined?undefined:`${navLayout.indent}px` } as React.CSSProperties}
     >
+      <SidebarGreenPicker blocked={thumbnailEnlarged || !!customTab || quickPreview !== null || (viewer !== null && !widePreview) || (!!modal&&modal.kind!=='settings') || !!capture || !!videoDialog || duplicatesOpen || removedOpen || libraryExportOpen || storageOpen || !!extraDialog}/>
       <aside
         className="sidebar"
         onClickCapture={e=>{if((e.target as HTMLElement).closest('.nav-item,.brand,[aria-label=Settings]')){const stamp=performance.now();navigationStart.current=stamp;setTimeout(()=>{if(navigationStart.current===stamp)navigationStart.current=null;},0);}if(modal?.kind==='settings'&&(e.target as HTMLElement).closest('.nav-item,.brand'))setModal(null);}}
@@ -1468,6 +1473,14 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
         />
       </aside>
       <main inert={thumbnailEnlarged || !!customTab || quickPreview !== null || (viewer !== null && !widePreview) || (!!modal&&modal.kind!=='settings') || !!capture || !!videoDialog || duplicatesOpen || removedOpen || libraryExportOpen || storageOpen}>
+        {error && (
+          <div className="error-banner" role="alert">
+            <span>{error}</span>
+            <IconButton title="Dismiss error" onClick={() => setError("")}>
+              <X size={14} />
+            </IconButton>
+          </div>
+        )}
         {modal?.kind==='settings'?libraryDialog:<>{studioView?.section==='business'?<MyBusiness page={studioView.page} open={page=>openStudio({section:'business',page})}/>:studioView?.section==='analytics'?<Analytics lib={lib} page={studioView.page} open={openStudio} openProject={navigate} customize={()=>setCustomTab('analytics')}/>:studioView?.section==='clients'?<ClientsWorkspace initialise={initialiseClients} lib={lib} route={studioView} navigate={setStudioView} mutate={mutate} importInto={importStudio} preview={item=>item.kind==='link'?void openUrl(item.path).catch(report):setQuickPreview(item.id)} openProject={id=>navigate(id)}/>:studioView?.section==='research'?<ResearchWorkspace lib={lib} route={studioView} navigate={setStudioView} mutate={mutate} importInto={importStudio} preview={item=>{if(item.kind==='link')void openUrl(item.path).catch(report);else {setReceiptBrowse((lib.studio??[]).find(e=>e.id===studioView.id)?.files??[item.id]);setQuickPreview(item.id);}}} openProject={id=>navigate(id)}/>:studioView?<StudioWorkspace lib={lib} route={studioView} navigate={setStudioView} mutate={mutate} importInto={importStudio} preview={item=>{if(item.kind==='link')void openUrl(item.path).catch(report);else{setReceiptBrowse((lib.studio??[]).find(e=>e.id===studioView.id)?.files??[item.id]);setQuickPreview(item.id);}}} openProject={id=>navigate(id)}/>:homeView?<><HomeDashboard summaryShare={homeOverviewPrefs.share} summary={homeOverviewPrefs.enabled&&(homeOverviewPrefs.events||homeOverviewPrefs.projects||homeOverviewPrefs.revenue)?<HomeOverview lib={lib} prefs={homeOverviewPrefs} openProject={id=>{navigate(id);setProjectSection("overview");}} openStudio={openStudio}/>:undefined} headerActions={<ColourPicker projects={lib.projects}/>} icons={icons} style={homeStyle} appearance={homeAppearance} destinations={homeDestinations} open={openHomeDestination} incoming={homeDrop} received={()=>setHomeDrop(null)} dragging={!!homeShortcutDrag.ghost}/></>:<>
         <header className="topbar">
           <div className="view-title">
@@ -1528,14 +1541,6 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
         {(readingCapture||pendingImports>0) && (
           <div className="capture-reading">
             <CaptureProgress progress={importProgress} queued={Math.max(0,pendingImports-1)}/>
-          </div>
-        )}
-        {error && (
-          <div className="error-banner" role="alert">
-            <span>{error}</span>
-            <IconButton title="Dismiss error" onClick={() => setError("")}>
-              <X size={14} />
-            </IconButton>
           </div>
         )}
         <div
@@ -2685,6 +2690,7 @@ function Dialog({
               <span className="setting-label">Backup</span>
               <button className="primary" onClick={exportLibrary}><Download size={14}/> Export full library</button>
               <small>Original media, saved links and organisation in one portable folder.</small>
+              <BackupCoverage/>
               <div className="button-row">
                 <button
                   className="subtle-button"
@@ -2700,7 +2706,7 @@ function Dialog({
                 </button>
               </div>
               <small>
-                Projects, tags and links. Imports merge with your library.
+                Metadata exports contain records and file references, not original media or appearance images. Imports merge with your library.
               </small>
             </div>
 </>}

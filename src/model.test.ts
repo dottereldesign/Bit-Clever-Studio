@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import { deepStrictEqual as equal } from "node:assert";
+import {componentFolders,componentInbox,filingCategory} from './componentsLibrary';
 import { filterItems, createMembershipIndex, designFoldersOf, orderedProjects, categoryOf, libraryCategories, type Filters, type Item } from "./model";
 const items: Item[] = [
   {
@@ -230,6 +231,57 @@ it("Hero and Headers share one Header folder without duplicate references",()=>{
  const header={...items[0],id:22,category:"Components / Headers",added:300};
  for(const category of ["Components / Headers","Components / Heroes","Components / Header"]){equal(filterItems([header,hero],{...defaults,category}).map(i=>i.id),[21,22]);}
  equal(filterItems([hero],{...defaults,category:"Components / Uncategorised"}),[]);
+});
+
+it("Blog sections and archives share Blog & News Sections without duplicates",()=>{
+ const section={...items[0],id:31,category:'Components / Blog sections',component_folders:['Components / Blog sections','Components / Blog archives'],category_added:{'Components / Blog archives':500}};
+ const archive={...items[0],id:32,category:'Components / Blog archives',added:300};
+ for(const category of ['Components / Blog sections','Components / Blog archives','Components / Blog & News Sections']){
+  equal(filterItems([archive,section],{...defaults,category}).map(i=>i.id),[31,32]);
+  equal(filterItems([archive,section],{...defaults,category},createMembershipIndex([archive,section])).map(i=>i.id),[31,32]);
+ }
+});
+
+it('retired component folders stay out of the list while preserving their references',()=>{
+ for(const name of ['Banners','Cart & checkout','Logo grids','Videos']){
+  const key=`Components / ${name}`;
+  equal(componentFolders.includes(key),false);
+  equal(filingCategory(key),componentInbox);
+  const orphan={...items[0],id:41,category:key};
+  const shared={...items[0],id:42,category:'Illustration',component_folders:[key]};
+  const filed={...items[0],id:43,category:componentInbox,component_folders:[key,'Components / Sponsors']};
+  const library=[orphan,shared,filed];const index=createMembershipIndex(library);
+  for(const category of [componentInbox,key]){
+   equal(filterItems(library,{...defaults,category,sort:'name'},index).map(i=>i.id).sort(),[41,42]);
+  }
+  equal(filterItems(library,{...defaults,category:'All Components'},index).length,3);
+  equal(filterItems(library,{...defaults,category:'Components / Sponsors'},index).map(i=>i.id),[43]);
+ }
+ equal(componentFolders.includes('Components / Sponsors'),true);
+});
+
+it('Logins and Signups share one folder and preserve the most recent arrival',()=>{
+ equal(componentFolders.includes('Components / Logins'),false);
+ equal(componentFolders.includes('Components / Signups'),false);
+ equal(componentFolders.includes('Components / Logins & Signups'),true);
+ const login={...items[0],id:51,category:'Components / Logins',component_folders:['Components / Logins','Components / Signups'],category_added:{'Components / Signups':500}};
+ const signup={...items[0],id:52,category:'Components / Signups',added:300};
+ const library=[signup,login];const index=createMembershipIndex(library);
+ for(const category of ['Components / Logins','Components / Signups','Components / Logins & Signups']){
+  equal(filterItems(library,{...defaults,category},index).map(i=>i.id),[51,52]);
+ }
+});
+
+it('Products includes Product Grids once per item, including legacy links and arrivals',()=>{
+ equal(componentFolders.includes('Components / Product grids'),false);
+ equal(componentFolders.includes('Components / Products'),true);
+ const product={...items[0],id:61,category:'Components / Products',added:300};
+ const grid={...items[0],id:62,kind:'link' as const,category:'Components / Product grids',component_folders:['Components / Products','Components / Product grids'],category_added:{'Components / Product grids':500}};
+ const library=[product,grid];const index=createMembershipIndex(library);
+ for(const category of ['Components / Products','Components / Product grids']){
+  equal(filterItems(library,{...defaults,category},index).map(i=>i.id),[62,61]);
+  equal(filterItems(library,{...defaults,category}).map(i=>i.id),[62,61]);
+ }
 });
 
 it("stale inbox markers cannot keep a moved reference in the previous section",()=>{

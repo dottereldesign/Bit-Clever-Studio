@@ -42,8 +42,9 @@ fn image_thumbnail_rebuilds_old_tall_cache_and_preserves_the_original() {
     assert!(old.is_file());
     let reuse = library::media(&dbpath, &cache, std::path::Path::new("unused"), item.id, "thumbnail").unwrap();
     assert_eq!(reuse, generated);
+    // Unscoped legacy video thumbnails cannot be reused across libraries.
     db::connect(&dbpath).unwrap().execute("UPDATE items SET kind='video' WHERE id=?",[item.id]).unwrap();
-    assert_eq!(std::path::Path::new(&library::media(&dbpath, &cache, std::path::Path::new("unused"), item.id, "thumbnail").unwrap()),old.as_path(),"Video thumbnails retain the existing cache");
+    assert!(library::media(&dbpath, &cache, std::path::Path::new("unused"), item.id, "thumbnail").is_err());
     if let Some(output) = std::env::var_os("DESIGN_THUMBNAIL_QA_DIR") {
         let output = std::path::PathBuf::from(output);fs::create_dir_all(&output).unwrap();
         fs::copy(&old,output.join("before.jpg")).unwrap();fs::copy(&generated,output.join("after.jpg")).unwrap();
@@ -1052,7 +1053,7 @@ fn cancelled_video_download_stops_process_and_cleans_staging() {
     db::set_setting(&db::connect(&path).unwrap(),"root_videos",&root.to_string_lossy()).unwrap();
     let binaries=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("binaries");
     let result=crate::download::run(&path,&binaries.join("yt-dlp.exe"),&binaries.join("ffmpeg.exe"),crate::download::Request{url:"https://example.com/cancel-before-connect".into(),projects:vec![],tags:vec![]},&std::sync::atomic::AtomicBool::new(true),&mut |_|{});
-    assert_eq!(result.err().unwrap(),"Download cancelled.");assert!(db::load(&path,false).unwrap().items.is_empty());assert_eq!(fs::read_dir(temp.path().join("video-downloads")).unwrap().count(),0);
+    assert_eq!(result.err().unwrap(),"Download cancelled.");assert!(db::load(&path,false).unwrap().items.is_empty());assert_eq!(fs::read_dir(temp.path().join("video-downloads")).map(|r|r.count()).unwrap_or(0),0);
 }
 
 #[test]
@@ -1284,6 +1285,53 @@ fn component_links_persist_and_undo_memberships() {
  let backup=temp.path().join("links.json");db::export(&path,backup.clone()).unwrap();let restored=temp.path().join("restored.sqlite");db::init(&restored).unwrap();db::import(&restored,backup).unwrap();
  let link=db::load(&restored,false).unwrap().items.remove(0);assert_eq!(link.category.as_deref(),Some("Components / Uncategorised"));assert_eq!(link.component_folders,vec!["Components / 404 pages"]);
 
+}
+
+#[test]
+fn merged_blog_folder_removal_preserves_other_memberships_and_undo() {
+ let temp=tempfile::tempdir().unwrap();let path=temp.path().join("blog.sqlite");db::init(&path).unwrap();
+ db::connect(&path).unwrap().execute("INSERT INTO items(id,path,name,kind,source,added) VALUES(1,'https://example.com/blog','Blog inspiration','link','',1)",[]).unwrap();
+ let apply=|action,value|db::change(&path,change(action,vec![1],None,None,value));
+ for folder in ["Components / Blog sections","Components / Blog archives","Components / Blog & News Sections","Components / Headers"] {apply("set_category",Some(folder)).unwrap();}
+ let read=||db::load(&path,false).unwrap().items.remove(0);
+ apply("remove_component_folder",Some("Components / Blog & News Sections")).unwrap();
+ assert_eq!(read().component_folders,vec!["Components / Headers"]);
+ apply("undo_organisation",None).unwrap();assert_eq!(read().component_folders.len(),4);
+ apply("redo_organisation",None).unwrap();assert_eq!(read().component_folders,vec!["Components / Headers"]);
+ assert_eq!(read().path,"https://example.com/blog");
+}
+
+#[test]
+fn merged_auth_and_retired_component_memberships_preserve_history() {
+ let temp=tempfile::tempdir().unwrap();let path=temp.path().join("components.sqlite");db::init(&path).unwrap();
+ db::connect(&path).unwrap().execute("INSERT INTO items(id,path,name,kind,source,added) VALUES(1,'sample.png','Component','image','',1)",[]).unwrap();
+ let apply=|action,value|db::change(&path,change(action,vec![1],None,None,value));
+ let read=||db::load(&path,false).unwrap().items.remove(0);
+ for folder in ["Components / Logins","Components / Signups","Components / Logins & Signups","Components / Sponsors"] {apply("set_category",Some(folder)).unwrap();}
+ apply("remove_component_folder",Some("Components / Logins & Signups")).unwrap();assert_eq!(read().component_folders,vec!["Components / Sponsors"]);
+ apply("undo_organisation",None).unwrap();assert_eq!(read().component_folders.len(),4);
+ apply("redo_organisation",None).unwrap();assert_eq!(read().component_folders,vec!["Components / Sponsors"]);
+ for retired in ["Components / Banners","Components / Cart & checkout","Components / Logo grids","Components / Videos"] {
+  let connection=db::connect(&path).unwrap();connection.execute("DELETE FROM item_component_folders WHERE item_id=1",[]).unwrap();
+  connection.execute("INSERT INTO item_component_folders VALUES(1,?)",[retired]).unwrap();
+  apply("set_category",Some("Illustration")).unwrap();assert!(read().component_folders.is_empty());
+  apply("undo_organisation",None).unwrap();assert_eq!(read().component_folders,vec![retired]);
+  apply("set_category",Some("Components / Sponsors")).unwrap();assert_eq!(read().component_folders,vec!["Components / Sponsors"]);
+ }
+ assert_eq!(read().path,"sample.png");
+}
+
+#[test]
+fn products_removal_clears_legacy_grids_and_undo_preserves_other_folders() {
+ let temp=tempfile::tempdir().unwrap();let path=temp.path().join("products.sqlite");db::init(&path).unwrap();
+ db::connect(&path).unwrap().execute("INSERT INTO items(id,path,name,kind,source,added) VALUES(1,'sample.png','Product grid','image','',1)",[]).unwrap();
+ let apply=|action,value|db::change(&path,change(action,vec![1],None,None,value));
+ let read=||db::load(&path,false).unwrap().items.remove(0);
+ for folder in ["Components / Products","Components / Product grids","Components / Sponsors"] {apply("set_category",Some(folder)).unwrap();}
+ apply("remove_component_folder",Some("Components / Products")).unwrap();assert_eq!(read().component_folders,vec!["Components / Sponsors"]);
+ apply("undo_organisation",None).unwrap();assert_eq!(read().component_folders.len(),3);
+ apply("redo_organisation",None).unwrap();assert_eq!(read().component_folders,vec!["Components / Sponsors"]);
+ assert_eq!(read().path,"sample.png");
 }
 
 #[test]

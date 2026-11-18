@@ -8,7 +8,7 @@ pub fn details(db_path:&Path, project:i64)->Result<Vec<FileInfo>> {
     let db=db::connect(db_path)?;
     let mut query=db.prepare("SELECT i.id,i.path FROM items i JOIN item_projects p ON p.item_id=i.id WHERE p.label_id=? AND i.archived=0 AND i.kind!='link'").map_err(err)?;
     let rows=query.query_map([project],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?))).map_err(err)?;
-    rows.map(|row|{let (id,path)=row.map_err(err)?;let meta=fs::metadata(path).ok();Ok(FileInfo{id,bytes:meta.as_ref().map(|m|m.len()),modified:meta.and_then(|m|m.modified().ok()).and_then(|t|t.duration_since(std::time::UNIX_EPOCH).ok()).map(|t|t.as_millis() as u64)})}).collect()
+    rows.map(|row|{let (id,path)=row.map_err(err)?;let meta=fs::metadata(path).ok();Ok(FileInfo{id,bytes:meta.as_ref().map(|m|m.len()),modified:meta.and_then(|m|m.modified().ok()).and_then(crate::timestamps::unix_millis).map(|t|t as u64)})}).collect()
 }
 pub fn path(db_path:&Path,id:i64)->Result<PathBuf> {
     let db=db::connect(db_path)?;

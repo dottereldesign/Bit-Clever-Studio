@@ -1,4 +1,4 @@
-import { allComponents, filingCategory, isComponent, isWebDesign, componentInbox, isHeaderFolder } from "./componentsLibrary";
+import { allComponents, filingCategory, isComponent, isWebDesign, componentInbox, isHeaderFolder, isBlogFolder, isAuthFolder, isRetiredComponentFolder, isProductsFolder } from "./componentsLibrary";
 export type ClientContact={id:string;project_id:number;name:string;role:string;company:string;email:string;phone:string;notes:string;primary:boolean;archived:boolean};
 export type ClientRecord={id:string;project_id:number;kind:'meeting'|'feedback'|'decision';title:string;date:string;people:string[];body:string;status:string;files:number[];related:string[];archived:boolean};
 export type ClientData={contacts:ClientContact[];records:ClientRecord[]};
@@ -40,6 +40,7 @@ export const isTableLink = (item: Item) => item.kind === "link" && (item.source 
 export const isCollectionLink = (item: Item) => item.source === "Studio" || isResource(item) || isBoardLink(item) || (item.kind === "link" && componentFoldersOf(item).length>0);
 export const canCopyImage = (item: Item) => item.kind === "image" || item.kind === "animation";
 export type Library = {
+  maintenance_warning?:string|null;
   studio?:import("./studio").StudioEntry[];
   client_records?:ClientData;
   project_overviews?: ProjectOverviewData[];
@@ -115,7 +116,7 @@ export function createMembershipIndex(items: Item[]): MembershipIndex {
 }
 
 export function filterItems(items: Item[], f: Filters, index?: MembershipIndex): Item[] {
-  if(f.category!=null&&isHeaderFolder(f.category))f={...f,category:filingCategory(f.category)};
+  if(f.category!=null&&isComponent(f.category))f={...f,category:filingCategory(f.category)};
   // A stale index must never hide a newly imported or restored item.
   if (index?.items !== items) index = undefined;
   let candidates = items;
@@ -171,6 +172,7 @@ export const categoryOf = (item: Item): string => {
 let labelText:string|null=null,labelCache:Record<string,string>={};
 export const readFolderLabels=():Record<string,string>=>{try{const text=localStorage.getItem('folder-labels')??'{}';if(text!==labelText){const value=JSON.parse(text);labelCache=value&&typeof value==='object'&&!Array.isArray(value)?value:{};labelText=text;}return labelCache;}catch{return {};}};
 export const categoryLabel = (name: string): string => {
+ if(isBlogFolder(name)||isAuthFolder(name)||isRetiredComponentFolder(name)||isProductsFolder(name))name=filingCategory(name);
  const label=readFolderLabels()[name];if(typeof label==='string'&&label.trim())return isComponent(name)?`Components / ${label}`:label;
  if(/^business[ _-]+cards$/i.test(name.trim()))return "Cards";
  if(/^patterns[ _-]*(?:&|and)?[ _-]*textures$/i.test(name.trim()))return "Backgrounds";
@@ -194,11 +196,11 @@ export const designFoldersOf=(item:Item):string[]=>{
 export const componentFoldersOf = (item: Item): string[] => {
   const category=categoryOf(item);
   const folders=[...new Set([...(item.component_folders ?? []), ...(category!==componentInbox?[category]:[])].map(filingCategory))].filter(n=>isComponent(n)&&n!==componentInbox);
-  return folders.length?folders:(isComponent(category)?[componentInbox]:[]);
+  return folders.length?folders:(isComponent(category)||(item.component_folders??[]).some(isRetiredComponentFolder)?[componentInbox]:[]);
 };
 
 function folderArrival(item:Item,folder:string):number{
- if(!isHeaderFolder(folder))return item.category_added?.[folder]??item.added;
+ if(!isHeaderFolder(folder)&&!isBlogFolder(folder)&&!isAuthFolder(folder)&&!isProductsFolder(folder))return item.category_added?.[folder]??item.added;
  const arrivals=Object.entries(item.category_added??{}).filter(([name])=>filingCategory(name)===folder).map(([,added])=>added);
  return arrivals.length?Math.max(...arrivals):item.added;
 }

@@ -1,22 +1,22 @@
 import {record} from './diagnostics';
 import {invoke,isTauri} from "./diagnostics";
 import {appHistory} from "./appHistory";
-const keys=['app-theme','app-colour-sources','personal-studio-default','settings-appearance','customise-tab-order','analytics-appearance','home-overview','tab-appearance','cta-appearance','app-branding','clients-startup','clients-last-seen','sidebar-section-order','research-view','onboarding','sidebar-section-colours','studio-layouts','project-file-layouts','selection-style','colour-history','collection-shortcuts','site-shortcuts','tile-size','sidebar-width','sidebar-section-style','home-style','home-appearance','reduce-motion','sidebar-layout','app-icons','folder-labels','folder-appearance','sidebar-folder-order','home-plan','home-tiles'];
-const allowed=(key:string)=>keys.includes(key)||key.startsWith('sidebar-open:');
-const invalidKeys=new Set<string>();
-export function collectBackupPreferences(){
- const result:Record<string,unknown>={};
- for(const key of Object.keys(localStorage)){if(allowed(key)){try{result[key]=JSON.parse(localStorage.getItem(key)!);invalidKeys.delete(key);}catch{if(!invalidKeys.has(key)){invalidKeys.add(key);record('settings.invalid_value','warning',0,{field:keys.includes(key)?key:'sidebar_visibility',error_code:'invalid_json'});}}}}
- return result;
-}
-export function applyBackupPreferences(values:Record<string,unknown>){
- for(const [key,value] of Object.entries(values)){if(allowed(key))localStorage.setItem(key,JSON.stringify(value));}
-}
+import {isRecord,isPreference} from './preferenceSchema';
+import {applyPreferenceValues,readPreferenceValues,repairPreferences,recoverStoredPreferences,retainOriginal} from './preferenceStorage';
+export const collectBackupPreferences=()=>readPreferenceValues();
+export const applyBackupPreferences=(values:unknown)=>applyPreferenceValues(values);
 
 export async function loadLibraryPreferences(){
- if(!isTauri())return;
- const values=await invoke<Record<string,unknown>|null>('library_preferences');
- if(values!==null){const {root}=await invoke<{root:string}>('library_overview');if(localStorage.getItem('active-library-root')!==root){localStorage.removeItem('last-workspace-view');localStorage.setItem('active-library-root',root);}for(const key of Object.keys(localStorage))if(allowed(key))localStorage.removeItem(key);applyBackupPreferences(values);}
+ if(!isTauri()){repairPreferences();return;}
+ const {root}=await invoke<{root:string}>('library_overview');
+ if(localStorage.getItem('active-library-root')!==root){localStorage.removeItem('last-workspace-view');localStorage.setItem('active-library-root',root);}
+ const values=await invoke<unknown>('library_preferences');
+ if(values!==null){
+  if(!isRecord(values)){retainOriginal(localStorage,'library-preferences',JSON.stringify(values));throw Error('Saved preferences are invalid. Use Reset preferences to recover.');}
+  for(const key of Object.keys(localStorage))if(isPreference(key))localStorage.removeItem(key);
+  applyBackupPreferences(values);
+ }
+ repairPreferences();
 }
 let pending:Promise<void>|null=null,dirty=false,last='';
 export async function flushLibraryPreferences(){
@@ -26,3 +26,14 @@ export async function flushLibraryPreferences(){
  return pending;
 }
 export function trackLibraryPreferences(report:(e:unknown)=>void){return appHistory.subscribe(()=>{void flushLibraryPreferences().catch(report);});}
+
+// Persist first; a failed native save restores the local values and keeps the view open.
+export async function recoverPreferences(restore:boolean){
+ if(pending)await pending;
+ const recovery=recoverStoredPreferences(restore,async preferences=>{
+  if(isTauri())await invoke('save_library_preferences',{preferences});
+  last=JSON.stringify(preferences);
+ });
+ pending=recovery;
+ try{await recovery;}finally{pending=null;}
+}

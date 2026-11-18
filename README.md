@@ -20,7 +20,7 @@ Start with the sidebar: each section opens the tools for that part of your work.
 
 ## Your sidebar is the workspace
 
-**Version 0.4.0 (development).** The sidebar is the app's main navigation. Open a section for its tools, drag sections into your preferred order, or drag supported destinations and Analytics reports onto Home. The app starts on Home with sidebar sections collapsed.
+**Version 0.5.0.** The sidebar is the app's main navigation. Open a section for its tools, drag sections into your preferred order, or drag supported destinations and Analytics reports onto Home. The app starts on Home with sidebar sections collapsed.
 
 | Section | What it helps you solve |
 | --- | --- |

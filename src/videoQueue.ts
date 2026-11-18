@@ -44,12 +44,12 @@ export function restoreVideoQueue(text: string | null): VideoJob[] {
     return data.flatMap((job): VideoJob[] => {
       if (!job || typeof job.id!=='string' || typeof job.url!=='string' || !Array.isArray(job.projects) || !Array.isArray(job.tags) || !['queued','active','error','done','cancelled'].includes(job.status)) return [];
       try {
-        return [{id:job.id,url:videoKey(job.url),key:videoKey(job.url),projects:job.projects.filter(Number.isSafeInteger),tags:job.tags.filter(Number.isSafeInteger),status:job.status==='active'?'queued':job.status,error:typeof job.error==='string'?job.error:undefined,reused:!!job.reused}];
+        return [{id:job.id,url:videoKey(job.url),key:videoKey(job.url),projects:job.projects.filter(Number.isSafeInteger),tags:job.tags.filter(Number.isSafeInteger),status:job.status==='active'?'error':job.status,error:job.status==='active'?(job.cancelling?'Interrupted while cancelling. Retry to check whether the video was saved.':'Download interrupted. Retry to continue.'):typeof job.error==='string'?job.error:undefined,reused:!!job.reused}];
       } catch { return []; }
     });
   } catch { return []; }
 }
 export function persistVideoQueue(jobs: VideoJob[]) {
   const finished=jobs.filter(job=>['done','cancelled'].includes(job.status)).slice(-20);
-  return JSON.stringify(jobs.filter(job=>!['done','cancelled'].includes(job.status)||finished.includes(job)).map(({progress,started,cancelling,...job})=>({...job,status:cancelling?'cancelled':job.status})));
+  return JSON.stringify(jobs.filter(job=>!['done','cancelled'].includes(job.status)||finished.includes(job)).map(({progress,started,cancelling,...job})=>({...job,...(cancelling?{cancelling:true}:{} )})));
 }

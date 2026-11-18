@@ -55,6 +55,7 @@ pub struct HistoryEntry {
 }
 #[derive(Serialize, Deserialize)]
 pub struct Library {
+    #[serde(default)] pub maintenance_warning: Option<String>,
     #[serde(default)]
     pub studio: Vec<crate::studio::Entry>,
     #[serde(default)]
@@ -90,7 +91,7 @@ pub struct Library {
 pub fn connect(path: &Path) -> Result<Connection> {
     let db = Connection::open(path).map_err(err)?;
     db.busy_timeout(Duration::from_secs(15)).map_err(err)?;
-    db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;")
+    db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;")
         .map_err(err)?;
     Ok(db)
 }
@@ -136,6 +137,7 @@ pub fn init(path: &Path) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS item_component_folders(item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,name TEXT NOT NULL,PRIMARY KEY(item_id,name));").map_err(err)?;
     db.execute_batch("CREATE TABLE IF NOT EXISTS category_arrivals(item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,name TEXT NOT NULL,added INTEGER NOT NULL,PRIMARY KEY(item_id,name));").map_err(err)?;
     db.execute_batch("CREATE TABLE IF NOT EXISTS item_design_folders(item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,name TEXT NOT NULL,PRIMARY KEY(item_id,name));").map_err(err)?;
+    crate::file_moves::init(&db)?;
     crate::project_folders::init(&db)?;
     crate::project_overview::init(&db)?;
     crate::client_records::init(&db)?;
@@ -192,7 +194,14 @@ pub fn touch_project(db: &Connection, project: i64) -> Result<()> {
     )
 }
 pub fn load(path: &Path, scanning: bool) -> Result<Library> {
-    let db = connect(path)?;
+    load_snapshot(path, scanning, || {})
+}
+// The observer lets regression tests commit a writer between component reads.
+fn load_snapshot(path: &Path, scanning: bool, after_items: impl FnOnce()) -> Result<Library> {
+    let connection = connect(path)?;
+    // Keep items, memberships, counts and history on the same WAL snapshot.
+    // A deferred read transaction does not acquire the shared content write lock.
+    let db = connection.unchecked_transaction().map_err(err)?;
     let mut stmt = db
         .prepare("SELECT id,path,name,kind,source,modified,added,missing,source_url,thumbnail,rating,project_only FROM items WHERE archived=0 ORDER BY id")
         .map_err(err)?;
@@ -222,6 +231,7 @@ pub fn load(path: &Path, scanning: bool) -> Result<Library> {
         .map_err(err)?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(err)?;
+    after_items();
     let lookup: std::collections::HashMap<i64, usize> =
         items.iter().enumerate().map(|(n, i)| (i.id, n)).collect();
     {
@@ -337,6 +347,7 @@ pub fn load(path: &Path, scanning: bool) -> Result<Library> {
         Ok(rows)
     };
     Ok(Library {
+        maintenance_warning:setting(&db,"maintenance_warning").filter(|s|!s.is_empty()),
         studio: crate::studio::load(&db)?,
         project_folders: crate::project_folders::folders(&db)?,
         project_overviews: crate::project_overview::load(&db)?,
@@ -363,12 +374,47 @@ pub fn load(path: &Path, scanning: bool) -> Result<Library> {
         source_paths,
     })
 }
-pub fn now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn library_read_keeps_items_memberships_counts_and_history_on_one_snapshot() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("snapshot.sqlite");
+        init(&path).unwrap();
+        let mut writer = connect(&path).unwrap();
+        writer.execute_batch("INSERT INTO items(id,path,name,kind,added) VALUES(1,'https://example.test','before','link',1);
+            INSERT INTO projects(id,name) VALUES(1,'before');
+            INSERT INTO item_projects(item_id,label_id) VALUES(1,1);").unwrap();
+        let before = load(&path, false).unwrap();
+        let snapshot = load_snapshot(&path, false, || {
+            // Commit after the item SELECT has completed, before memberships,
+            // label counts and history are read. No timing or real library data.
+            let tx = writer.transaction().unwrap();
+            tx.execute_batch("UPDATE items SET name='after' WHERE id=1;
+                UPDATE projects SET name='after' WHERE id=1;
+                DELETE FROM item_projects WHERE item_id=1;").unwrap();
+            crate::history::record(&tx, "Concurrent change", vec![]).unwrap();
+            tx.commit().unwrap();
+        }).unwrap();
+        assert_eq!(snapshot.items[0].name, "before");
+        assert_eq!(snapshot.items[0].projects, vec![1]);
+        assert_eq!(snapshot.projects[0].name, "before");
+        assert_eq!(snapshot.projects[0].count, 1);
+        assert_eq!(snapshot.undo_count, before.undo_count);
+        let next = load(&path, false).unwrap();
+        assert_eq!(next.items[0].name, "after");
+        assert!(next.items[0].projects.is_empty());
+        assert_eq!(next.projects[0].name, "after");
+        assert_eq!(next.projects[0].count, 0);
+        assert_eq!(next.undo_count, before.undo_count + 1);
+        assert_eq!(next.undo_label.as_deref(), Some("Concurrent change"));
+    }
 }
+
+pub use crate::timestamps::now;
+
 pub fn default_category(source: &str) -> String {
     if source == "Photography" || source.starts_with("Photography/") {
         return "Photography".to_owned();
@@ -439,6 +485,9 @@ fn materialize_component_folder(db:&Connection,id:i64)->Result<()> {
     if let Some(name)=previous.filter(|n|n.starts_with("Components / ")) {
         if name!="Components / Uncategorised"||component_memberships(db,id)?.is_empty(){db.execute("INSERT OR IGNORE INTO item_component_folders(item_id,name) VALUES(?,?)",params![id,name]).map_err(err)?;}
     }
+    // Retired folders act as the inbox until the next membership edit.
+    let retired=db.execute("DELETE FROM item_component_folders WHERE item_id=? AND name COLLATE NOCASE IN ('Components / Banners','Components / Cart & checkout','Components / Logo grids','Components / Videos')",[id]).map_err(err)?;
+    if retired>0&&component_memberships(db,id)?.is_empty(){db.execute("INSERT OR IGNORE INTO item_component_folders VALUES(?,'Components / Uncategorised')",[id]).map_err(err)?;}
     Ok(())
 }
 fn valid_name(name: &str) -> Result<&str> {
@@ -540,6 +589,12 @@ pub fn change(path: &Path, c: Change) -> Result<()> {
                 materialize_component_folder(&tx,id)?;
                 if ["Components / Headers","Components / Header","Components / Heroes","Components / Hero"].contains(&value){
                     tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name IN ('Components / Headers','Components / Header','Components / Heroes','Components / Hero')",[id]).map_err(err)?;
+                }else if ["Components / Blog sections","Components / Blog archives","Components / Blog & News Sections"].iter().any(|name|name.eq_ignore_ascii_case(value)){
+                    tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name COLLATE NOCASE IN ('Components / Blog sections','Components / Blog archives','Components / Blog & News Sections')",[id]).map_err(err)?;
+                }else if ["Components / Logins","Components / Signups","Components / Logins & Signups"].iter().any(|name|name.eq_ignore_ascii_case(value)){
+                    tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name COLLATE NOCASE IN ('Components / Logins','Components / Signups','Components / Logins & Signups')",[id]).map_err(err)?;
+                }else if ["Components / Products","Components / Product grids"].iter().any(|name|name.eq_ignore_ascii_case(value)){
+                    tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name COLLATE NOCASE IN ('Components / Products','Components / Product grids')",[id]).map_err(err)?;
                 }else{tx.execute("DELETE FROM item_component_folders WHERE item_id=? AND name=?",params![id,value]).map_err(err)?;}
 
                 tx.execute("UPDATE item_categories SET name='Components / Uncategorised' WHERE item_id=?",[id]).map_err(err)?;
@@ -722,6 +777,10 @@ pub fn export(path: &Path, destination: PathBuf) -> Result<()> {
     std::fs::write(destination, serde_json::to_vec_pretty(&data).map_err(err)?).map_err(err)
 }
 pub fn import(path: &Path, source: PathBuf) -> Result<()> {
+    crate::file_moves::reconcile(path)?;
+    import_inner(path,source).map_err(|error|crate::file_moves::rollback_error(path,error))
+}
+fn import_inner(path: &Path, source: PathBuf) -> Result<()> {
     let mut backup: Backup =
         serde_json::from_slice(&std::fs::read(&source).map_err(err)?).map_err(err)?;
     if backup.version != 1 {
@@ -737,7 +796,7 @@ pub fn import(path: &Path, source: PathBuf) -> Result<()> {
         backup.library.root=crate::library_export::resolve_relative(&base,&backup.library.root)?;
         for (_,path) in &mut backup.library.source_paths {*path=crate::library_export::resolve_relative(&base,path)?;}
     }
-    if let Some(folder)=crate::managed_library::root(path)?{crate::managed_library::own_import(&folder,&mut backup.library.items)?;}
+    if let Some(folder)=crate::managed_library::root(path)?{crate::managed_library::own_import(path,&folder,&mut backup.library.items)?;}
     let mut db = connect(path)?;
     let tx = db.transaction().map_err(err)?;
     set_setting(&tx,"client_event_action","import_client_backup")?;
@@ -880,15 +939,19 @@ pub fn import(path: &Path, source: PathBuf) -> Result<()> {
             }
         }
     }
-    for mut overview in backup.library.project_overviews {overview.project_id=*projects.get(&overview.project_id).ok_or("Missing overview project in backup")?;if let Some(nodes)=&mut overview.moodboard{for node in nodes{node.item_id=node.item_id.and_then(|id|item_map.get(&id).copied());}}else{overview.moodboard=crate::project_overview::load(&tx)?.into_iter().find(|o|o.project_id==overview.project_id).and_then(|o|o.moodboard);}crate::project_overview::save(&tx,&overview)?;}
+    let refs=crate::import_references::ImportReferences::new(&projects,&item_map);
+    for mut overview in backup.library.project_overviews {overview.project_id=refs.required_project(overview.project_id,"Missing overview project in backup")?;if let Some(nodes)=&mut overview.moodboard{for node in nodes{node.item_id=refs.item(node.item_id);}}else{overview.moodboard=crate::project_overview::load(&tx)?.into_iter().find(|o|o.project_id==overview.project_id).and_then(|o|o.moodboard);}crate::project_overview::save(&tx,&overview)?;}
     crate::studio::import(&tx,backup.library.studio,&projects,&item_map)?;
     crate::clients::import(&tx,backup.client_events,&projects,&item_map)?;
-    for mut c in backup.library.client_records.contacts {c.project_id=*projects.get(&c.project_id).ok_or("Missing contact project")?;crate::client_records::save_contact(&tx,&c)?;}
-    for mut r in backup.library.client_records.records {r.project_id=*projects.get(&r.project_id).ok_or("Missing record project")?;r.files=r.files.iter().filter_map(|id|item_map.get(id).copied()).collect();crate::client_records::save_record(&tx,&r)?;}
+    for mut c in backup.library.client_records.contacts {c.project_id=refs.required_project(c.project_id,"Missing contact project")?;crate::client_records::save_contact(&tx,&c)?;}
+    for mut r in backup.library.client_records.records {r.project_id=refs.required_project(r.project_id,"Missing record project")?;r.files=refs.items(&r.files);crate::client_records::save_record(&tx,&r)?;}
     tx.execute("DELETE FROM organisation_history",[]).map_err(err)?;
     tx.execute("DELETE FROM organisation_redo",[]).map_err(err)?;
     crate::clients::end(&tx)?;
+    crate::file_moves::checkpoint("import.before_commit");
+    crate::import_copies::finish(&tx)?;
     tx.commit().map_err(err)?;
+    crate::file_moves::checkpoint("import.after_commit");
     Ok(())
 }
 

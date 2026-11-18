@@ -1,7 +1,7 @@
 {
   "name": "design-viewer",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -10,9 +10,10 @@
     "package": "node scripts/desktop.mjs build",
     "prepare:downloader": "node scripts/prepare-downloader.mjs",
     "prepare:media": "node scripts/prepare-media.mjs",
-    "test": "tsx --test src/appThemeData.test.ts src/businessData.test.ts src/defaultAppearance.test.ts src/analyticsData.test.ts src/homeOverviewData.test.ts src/tabAppearance.test.ts src/clientActivity.test.ts src/model.test.ts src/zoom.test.ts src/videoQueue.test.ts src/masonry.test.ts src/mediaQueue.test.ts src/homeLayout.test.ts src/sidebarSpace.test.ts src/appHistory.test.ts src/diagnosticContext.test.ts src/diagnosticEvidence.test.ts src/studio.test.ts src/calendarImport.test.ts",
+    "test": "tsx --test src/appThemeData.test.ts src/businessData.test.ts src/defaultAppearance.test.ts src/analyticsData.test.ts src/homeOverviewData.test.ts src/tabAppearance.test.ts src/clientActivity.test.ts src/model.test.ts src/zoom.test.ts src/videoQueue.test.ts src/masonry.test.ts src/mediaQueue.test.ts src/homeLayout.test.ts src/sidebarSpace.test.ts src/sidebarVisibility.test.ts src/appHistory.test.ts src/diagnosticContext.test.ts src/diagnosticEvidence.test.ts src/studio.test.ts src/calendarImport.test.ts tests/native-contract.test.ts src/refreshCoordinator.test.ts src/preferenceRecovery.test.ts tests/recovery-contract.test.ts",
     "audit:diagnostics": "node scripts/audit-diagnostics.mjs",
     "diagnose:performance": "node scripts/check-grid-return.mjs performance",
+    "diagnose:libraries": "node scripts/profile-library.mjs",
     "diagnose:processes": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/monitor-performance.ps1",
     "test:clipboard-scroll": "node scripts/check-grid-return.mjs clipboard-scroll",
     "test:session": "node scripts/check-grid-return.mjs view-session",
@@ -26,8 +27,11 @@
     "test:home": "node scripts/check-grid-return.mjs home-styles",
     "test:categories": "node scripts/check-grid-return.mjs categories",
     "test:drag": "node scripts/check-grid-return.mjs pointer-moves",
+    "test:browser:smoke": "node scripts/check-browser-smoke.mjs",
     "test:workflow": "node scripts/check-grid-return.mjs workflow-tools",
     "test:actions": "node scripts/check-grid-return.mjs copy-resources",
+    "verify:restore": "node scripts/verify-restore.mjs",
+    "test:contracts": "node scripts/check-native-contract.mjs",
     "test:native": "node scripts/desktop.mjs test",
     "check:version": "node scripts/check-version.mjs",
     "version:bump": "node scripts/bump-version.mjs",
@@ -55,6 +59,9 @@
     "ffmpeg-static": "^5.2.0",
     "tsx": "4.20.0",
     "typescript": "~5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^6.4.6"
+  },
+  "engines": {
+    "node": ">=22.23.5 <23"
   }
 }

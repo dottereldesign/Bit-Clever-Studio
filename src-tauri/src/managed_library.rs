@@ -23,26 +23,45 @@ fn configure(db:&rusqlite::Connection,folder:&Path)->Result<()>{
 pub fn open(folder:&Path)->Result<PathBuf>{
     let folder=folder.canonicalize().map_err(err)?;
     let path=folder.join("Library Data/Library.sqlite");
-    if path.is_file(){rebase(&path,&folder)?;return Ok(path);}
-    let report=library_export::verify(&folder)?;
-    if !report.missing.is_empty(){return Err(format!("This backup has {} unavailable files. Repair the source library before using it as a complete library.",report.missing.len()));}
-    let temporary=folder.join("Library Data/Creating.sqlite");
-    if temporary.exists(){return Err("An unfinished library setup exists. Keep this folder and create a fresh backup.".into());}
-    fs::create_dir_all(temporary.parent().unwrap()).map_err(err)?;
-    db::init(&temporary)?;
-    db::import(&temporary,library_export::metadata_path(&folder))?;
-    let preferences=library_export::restore_preferences(&folder,&temporary)?;
-    let conn=db::connect(&temporary)?;configure(&conn,&folder)?;
+    if !path.is_file(){
+        let report=library_export::verify(&folder)?;
+        if !report.missing.is_empty(){return Err(format!("This backup has {} unavailable files. Repair the source library before using it as a complete library.",report.missing.len()));}
+    }
+    fs::create_dir_all(folder.join("Library Data")).map_err(err)?;
+    let _lock=crate::library_creation::lock(&folder)?;
+    if path.is_file(){
+        let conn=db::connect(&path)?;let check:String=conn.query_row("PRAGMA quick_check",[],|r|r.get(0)).map_err(err)?;
+        if check!="ok"{return Err("The library database failed its integrity check.".into());}drop(conn);
+        rebase(&path,&folder)?;crate::file_moves::init(&db::connect(&path)?)?;crate::file_moves::reconcile(&path)?;
+        // Also finish maintenance after a crash immediately following publication.
+        if db::setting(&db::connect(&path)?,"creation_pending").as_deref()==Some("1"){organise(&path)?;db::set_setting(&db::connect(&path)?,"creation_pending","0")?;}crate::library_creation::cleanup(&folder)?;return Ok(path);
+    }
+    if folder.join("Library Data/Creating.sqlite").exists(){return Err("An older unfinished library setup exists. Keep this folder and create a fresh backup.".into());}
+    let temporary=crate::library_creation::prepare(&folder)?;
+    db::init(&temporary)?;crate::file_moves::checkpoint("creation.after_schema");
+    db::import(&temporary,library_export::metadata_path(&folder))?;crate::file_moves::checkpoint("creation.after_import");
+    let preferences=library_export::restore_preferences_to(&folder,&temporary,&folder.join("Library Data"))?;
+    let conn=db::connect(&temporary)?;configure(&conn,&folder)?;db::set_setting(&conn,"creation_pending","1")?;
     db::set_setting(&conn,"appearance_preferences",&serde_json::to_string(&preferences).map_err(err)?)?;
-    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);").map_err(err)?;drop(conn);
-    fs::rename(&temporary,&path).map_err(err)?;
-    organise(&path)?;Ok(path)
+    let check:String=conn.query_row("PRAGMA quick_check",[],|r|r.get(0)).map_err(err)?;
+    if check!="ok"{return Err("The new library database failed its integrity check.".into());}
+    let (busy,_,_):(i64,i64,i64)=conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(err)?;
+    if busy!=0{return Err("Library setup is busy. Close the other connection and retry.".into());}drop(conn);
+    fs::OpenOptions::new().read(true).write(true).open(&temporary).map_err(err)?.sync_all().map_err(err)?;
+    crate::file_moves::checkpoint("creation.before_publish");
+    // No-overwrite publication on the same volume, including drives without hard links.
+    tempfile::TempPath::try_from_path(temporary.clone()).map_err(err)?.persist_noclobber(&path).map_err(err)?;
+    crate::file_moves::checkpoint("creation.after_publish");
+    crate::library_creation::cleanup(&folder)?;
+    organise(&path)?;db::set_setting(&db::connect(&path)?,"creation_pending","0")?;crate::file_moves::checkpoint("creation.after_organise");Ok(path)
 }
 pub fn activate(config:&Path,folder:&Path)->Result<()> {
     let path=open(folder)?;verify_live(folder)?;let conn=db::connect(&path)?;
     let check:String=conn.query_row("PRAGMA quick_check",[],|r|r.get(0)).map_err(err)?;
     if check!="ok"{return Err("The library database failed its integrity check.".into());}
-    atomic_write(&config.join("active-library.json"),&serde_json::to_vec(&folder.canonicalize().map_err(err)?).map_err(err)?)
+    crate::file_moves::checkpoint("creation.before_activate");
+    atomic_write(&config.join("active-library.json"),&serde_json::to_vec(&folder.canonicalize().map_err(err)?).map_err(err)?)?;
+    crate::file_moves::checkpoint("creation.after_activate");Ok(())
 }
 fn rewrite_paths(value:&mut serde_json::Value,old:&Path,new:&Path){match value{
     serde_json::Value::String(s)=>{if let Ok(relative)=Path::new(s).strip_prefix(old){*s=new.join(relative).to_string_lossy().into_owned();}},
@@ -51,6 +70,7 @@ fn rewrite_paths(value:&mut serde_json::Value,old:&Path,new:&Path){match value{
 }}
 pub fn rebase(path:&Path,folder:&Path)->Result<()> {
     let mut conn=db::connect(path)?;let old=PathBuf::from(db::setting(&conn,"managed_root").ok_or("This is not a managed Bit Clever library")?);
+    crate::import_copies::init(&conn)?;
     let folder=folder.canonicalize().map_err(err)?;if old==folder{return Ok(());}
     let rows={let mut q=conn.prepare("SELECT id,path,thumbnail,kind FROM items").map_err(err)?;let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?))).map_err(err)?;rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?};
     let tx=conn.transaction().map_err(err)?;
@@ -60,11 +80,22 @@ pub fn rebase(path:&Path,folder:&Path)->Result<()> {
         tx.execute("UPDATE items SET path=?,thumbnail=? WHERE id=?",rusqlite::params![media,thumb,id]).map_err(err)?;
     }
     if let Some(saved)=db::setting(&tx,"appearance_preferences"){let mut prefs:serde_json::Value=serde_json::from_str(&saved).map_err(err)?;rewrite_paths(&mut prefs,&old,&folder);db::set_setting(&tx,"appearance_preferences",&serde_json::to_string(&prefs).map_err(err)?)?;}
+    crate::import_copies::rebase(&tx,&old,&folder)?;
+    for table in ["organisation_history","organisation_redo"] {
+        let patches={let mut q=tx.prepare(&format!("SELECT id,patches FROM {table}")).map_err(err)?;let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?))).map_err(err)?;rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?};
+        for (id,text) in patches {let mut value:serde_json::Value=serde_json::from_str(&text).map_err(err)?;rewrite_paths(&mut value,&old,&folder);tx.execute(&format!("UPDATE {table} SET patches=? WHERE id=?"),rusqlite::params![value.to_string(),id]).map_err(err)?;}
+    }
+    crate::file_moves::init(&tx)?;
+    let moves={let mut q=tx.prepare("SELECT item_id,source,destination FROM file_move_journal").map_err(err)?;let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(err)?;rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?};
+    for (id,source,destination) in moves {let rebase=|s:String|Path::new(&s).strip_prefix(&old).map(|p|folder.join(p).to_string_lossy().into_owned()).unwrap_or(s);tx.execute("UPDATE file_move_journal SET source=?,destination=? WHERE item_id=?",rusqlite::params![rebase(source),rebase(destination),id]).map_err(err)?;}
+    let recovery={let mut q=tx.prepare("SELECT item_id,original_path,recovery_path FROM duplicate_recovery").map_err(err)?;let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(err)?;rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?};
+    for (id,original,recovery) in recovery {let rebase=|s:String|Path::new(&s).strip_prefix(&old).map(|p|folder.join(p).to_string_lossy().into_owned()).unwrap_or(s);tx.execute("UPDATE duplicate_recovery SET original_path=?,recovery_path=? WHERE item_id=?",rusqlite::params![rebase(original),rebase(recovery),id]).map_err(err)?;}
     configure(&tx,&folder)?;tx.commit().map_err(err)
 }
 pub fn preferences(path:&Path)->Result<Option<serde_json::Value>>{let db=db::connect(path)?;if db::setting(&db,"managed_root").is_none(){return Ok(None);}Ok(Some(serde_json::from_str(&db::setting(&db,"appearance_preferences").unwrap_or_else(||"{}".into())).map_err(err)?))}
-pub fn save_preferences(path:&Path,value:&serde_json::Value)->Result<()>{if root(path)?.is_none(){return Ok(());}db::set_setting(&db::connect(path)?,"appearance_preferences",&serde_json::to_string(value).map_err(err)?)?;refresh_browser(path)}
+pub fn save_preferences(path:&Path,value:&serde_json::Value)->Result<()>{if root(path)?.is_none(){return Ok(());}db::set_setting(&db::connect(path)?,"appearance_preferences",&serde_json::to_string(value).map_err(err)?)?;after_commit(path,false);Ok(())}
 pub fn refresh_browser(path:&Path)->Result<()>{
+    crate::file_moves::reconcile(path)?;
     let Some(folder)=root(path)? else{return Ok(())};let mut lib=db::load(path,false)?;
     update_inventory(path,&folder,&lib)?;
     for item in &mut lib.items {if item.kind!="link"{item.path=Path::new(&item.path).strip_prefix(&folder).map_err(|_|"Library file is outside its folder")?.to_string_lossy().replace('\\',"/");}}
@@ -106,6 +137,7 @@ pub fn verify_live(folder:&Path)->Result<library_export::Verification>{
 }
 // Folder memberships identify the section. Refiling moves only the owned copy.
 pub fn organise(path:&Path)->Result<()> {
+    crate::file_moves::reconcile(path)?;
     let Some(folder)=root(path)? else{return Ok(())};let lib=db::load(path,false)?;let db=db::connect(path)?;
     for item in lib.items.iter().filter(|i|i.kind!="link") {
         let source=Path::new(&item.path);let destination=folder.join(library_export::collection(item));
@@ -114,7 +146,10 @@ pub fn organise(path:&Path)->Result<()> {
         fs::create_dir_all(&destination).map_err(err)?;
         let mut used:HashSet<String>=fs::read_dir(&destination).map_err(err)?.filter_map(|e|e.ok()).map(|e|format!("{}/{}",library_export::collection(item),e.file_name().to_string_lossy()).to_lowercase()).collect();
         let name=library_export::allocate_filename(&item.name,source,library_export::collection(item),&mut used);let target=destination.join(name);
-        fs::rename(source,&target).map_err(err)?;
+        crate::file_moves::record(&db,item.id,source,&target)?;
+        crate::file_moves::checkpoint("organise.after_intent");
+        if let Err(error)=crate::file_moves::move_file(source,&target){return Err(crate::file_moves::rollback_error(path,error));}
+        crate::file_moves::checkpoint("organise.after_move");
         let old_relative=source.strip_prefix(&folder).map_err(err)?.to_string_lossy().replace('\\',"/");
         let new_relative=target.strip_prefix(&folder).map_err(err)?.to_string_lossy().replace('\\',"/");
         let result=(||->Result<()>{
@@ -122,21 +157,23 @@ pub fn organise(path:&Path)->Result<()> {
             tx.execute("UPDATE items SET path=? WHERE id=?",rusqlite::params![target.to_string_lossy(),item.id]).map_err(err)?;
             tx.execute_batch("CREATE TABLE IF NOT EXISTS managed_checksums(path TEXT PRIMARY KEY,sha256 TEXT NOT NULL);").map_err(err)?;
             tx.execute("UPDATE OR REPLACE managed_checksums SET path=? WHERE path=?",rusqlite::params![new_relative,old_relative]).map_err(err)?;
+            crate::file_moves::finish(&tx,item.id)?;
             tx.commit().map_err(err)
         })();
-        if let Err(error)=result{let _=fs::rename(&target,source);return Err(error);}
+        if let Err(error)=result{return Err(crate::file_moves::rollback_error(path,error));}
+        crate::file_moves::checkpoint("organise.after_commit");
     }
     refresh_browser(path)
 }
 // Copy imports before committing their records. Existing originals remain untouched.
-pub fn own_import(folder:&Path,items:&mut [db::Item])->Result<()> {
+pub fn own_import(path:&Path,folder:&Path,items:&mut [db::Item])->Result<()> {
     for item in items.iter(){for file in [if item.kind!="link"{item.path.as_str()}else{""},item.thumbnail.as_str()] {if !file.is_empty()&&!Path::new(file).is_file(){return Err(format!("Cannot merge a missing file: {file}"));}}}
     for item in items {
-        if item.kind!="link"{item.path=copy_owned(folder,&item.path,library_export::collection(item),&item.name)?;}
-        if !item.thumbnail.is_empty(){item.thumbnail=copy_owned(folder,&item.thumbnail,"Library Data/Thumbnails","Thumbnail")?;}
+        if item.kind!="link"{item.path=copy_owned(path,folder,&item.path,library_export::collection(item),&item.name)?;}
+        if !item.thumbnail.is_empty(){item.thumbnail=copy_owned(path,folder,&item.thumbnail,"Library Data/Thumbnails","Thumbnail")?;}
     }Ok(())
 }
-fn copy_owned(folder:&Path,source:&str,group:&str,title:&str)->Result<String>{
+fn copy_owned(db_path:&Path,folder:&Path,source:&str,group:&str,title:&str)->Result<String>{
     let source=Path::new(source).canonicalize().map_err(err)?;if source.starts_with(folder){return Ok(source.to_string_lossy().into_owned());}
     let destination=folder.join(group);fs::create_dir_all(&destination).map_err(err)?;
     let expected=library_export::checksum(&source)?;
@@ -146,7 +183,12 @@ fn copy_owned(folder:&Path,source:&str,group:&str,title:&str)->Result<String>{
     let target=destination.join(library_export::allocate_filename(title,&source,group,&mut used));
     let temp=tempfile::NamedTempFile::new_in(&destination).map_err(err)?;fs::copy(&source,temp.path()).map_err(err)?;
     if library_export::checksum(temp.path())?!=expected||library_export::checksum(&source)?!=expected{return Err("An imported file changed while being copied.".into());}
-    temp.as_file().sync_all().map_err(err)?;temp.persist_noclobber(&target).map_err(err)?;Ok(target.to_string_lossy().into_owned())
+    temp.as_file().sync_all().map_err(err)?;
+    crate::import_copies::record(&db::connect(db_path)?,&target,temp.path(),&expected)?;
+    crate::file_moves::checkpoint("import.after_copy_intent");
+    temp.persist_noclobber(&target).map_err(err)?;
+    crate::file_moves::checkpoint("import.after_publish");
+    Ok(target.to_string_lossy().into_owned())
 }
 #[derive(Serialize)]
 pub struct CollectionStorage{pub name:String,pub count:usize,pub bytes:u64,pub path:Option<String>}
@@ -160,4 +202,14 @@ pub fn overview(path:&Path)->Result<Overview>{
         CollectionStorage{name:name.into(),count:items.len(),bytes,path:folder.as_ref().map(|f|f.join(name).to_string_lossy().into_owned())}
     }).collect();
     Ok(Overview{root:folder.map(|f|f.to_string_lossy().into_owned()),collections,last_backup:db::setting(&db::connect(path)?,"last_backup")})
+}
+
+// The database edit is already durable. Failure to maintain derived files must
+// never tell the caller to repeat that edit. Rescan or the next edit retries it.
+pub fn after_commit(path:&Path, organise_files:bool) {
+    let pending=db::connect(path).ok().and_then(|db|db::setting(&db,"maintenance_warning")).is_some_and(|s|!s.is_empty());
+    let result=if organise_files||pending {organise(path)} else {refresh_browser(path)};
+    let warning=if result.is_err(){"Saved your changes, but library files or the browser inventory need attention. Use Rescan library to retry."}else{""};
+    if let Ok(db)=db::connect(path){let _=db::set_setting(&db,"maintenance_warning",warning);}
+    if result.is_err(){crate::diagnostics::event("native.maintenance","warning",0.,serde_json::json!({"error_code":"maintenance_pending"}));}
 }

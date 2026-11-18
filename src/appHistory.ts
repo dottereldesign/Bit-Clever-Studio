@@ -1,3 +1,5 @@
+import {isStoredPreference,normalizePreference} from './preferenceSchema';
+import {repairStoredPreference} from './preferenceStorage';
 import {record as diagnosticRecord,errorCode} from './diagnostics';
 export type HistoryEntry = {
   label: string;
@@ -39,13 +41,17 @@ export class AppHistory {
   get busy() { return this.replaying || this.pending > 0; }
 
   read<T>(key: string, initial: () => T): T {
-    if (!this.values.has(key)) this.values.set(key, initial());
+    if (!this.values.has(key)) {
+      if(typeof localStorage!=="undefined")repairStoredPreference(key);
+      this.values.set(key, initial());
+    }
     return this.values.get(key) as T;
   }
   write(values: Record<string, unknown>) {
     for (const [key, value] of Object.entries(values)) {
-      this.values.set(key, value);
-      if (typeof localStorage !== "undefined") localStorage.setItem(key, JSON.stringify(value));
+      const safe=isStoredPreference(key)?normalizePreference(key,value):value;
+      if(safe===undefined){this.values.delete(key);if(typeof localStorage!=="undefined")localStorage.removeItem(key);}
+      else {this.values.set(key,safe);if(typeof localStorage!=="undefined")localStorage.setItem(key,JSON.stringify(safe));}
     }
     this.notify();
   }

@@ -18,7 +18,7 @@ pub fn folders(db:&Connection)->Result<Vec<Folder>> {
     rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)
 }
 pub fn memberships(db:&Connection)->Result<Vec<(i64,i64)>> {
-    let mut s=db.prepare("SELECT item_id,folder_id FROM item_project_folders").map_err(err)?;
+    let mut s=db.prepare("SELECT item_id,folder_id FROM item_project_folders ORDER BY item_id,folder_id").map_err(err)?;
     let rows=s.query_map([],|r|Ok((r.get(0)?,r.get(1)?))).map_err(err)?;
     rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)
 }
@@ -28,20 +28,35 @@ pub struct State { #[serde(default)] clients:Option<crate::client_records::State
 pub fn snapshot(db:&Connection)->Result<State> {
     let mut p=db.prepare("SELECT id,name FROM projects").map_err(err)?;
     let projects=p.query_map([],|r|Ok((r.get(0)?,r.get(1)?))).map_err(err)?.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?;
-    let mut m=db.prepare("SELECT item_id,label_id,favourite FROM item_projects").map_err(err)?;
+    let mut m=db.prepare("SELECT item_id,label_id,favourite FROM item_projects ORDER BY item_id,label_id").map_err(err)?;
     let members=m.query_map([],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(err)?.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?;
     Ok(State{clients:None,overviews:Some(crate::project_overview::load(db)?),projects,members,folders:folders(db)?,filing:memberships(db)?})
 }
 pub fn snapshot_with_clients(db:&Connection)->Result<State>{let mut s=snapshot(db)?;s.clients=Some(crate::client_records::load(db)?);Ok(s)}
 impl State {pub fn includes_clients(&self)->bool{self.clients.is_some()}}
-pub fn restore(db:&Connection,s:State)->Result<()> {
+pub fn restore(db:&Connection,mut s:State)->Result<()> {
+    // Compare each project's complete snapshot before rewriting it. Unchanged
+    // projects must not fire delete/insert activity triggers during another undo.
+    let current=snapshot_with_clients(db)?;
+    let signature=|state:&State,id:i64,include_clients:bool|serde_json::json!({
+        "project":state.projects.iter().find(|p|p.0==id),
+        "members":state.members.iter().filter(|m|m.1==id).collect::<Vec<_>>(),
+        "folders":state.folders.iter().filter(|f|f.project_id==id).collect::<Vec<_>>(),
+        "filing":state.filing.iter().filter(|m|state.folders.iter().any(|f|f.id==m.1&&f.project_id==id)).collect::<Vec<_>>(),
+        "overview":state.overviews.as_ref().and_then(|v|v.iter().find(|o|o.project_id==id)),
+        "contacts":if include_clients {state.clients.as_ref().map(|v|v.contacts.iter().filter(|c|c.project_id==id).collect::<Vec<_>>())}else{None},
+        "records":if include_clients {state.clients.as_ref().map(|v|v.records.iter().filter(|r|r.project_id==id).collect::<Vec<_>>())}else{None}
+    });
+    let affected:std::collections::HashSet<i64>=current.projects.iter().chain(&s.projects).map(|p|p.0).filter(|id|signature(&current,*id,s.clients.is_some())!=signature(&s,*id,s.clients.is_some())).collect();
+    s.projects.retain(|p|affected.contains(&p.0));s.members.retain(|m|affected.contains(&m.1));s.folders.retain(|f|affected.contains(&f.project_id));s.filing.retain(|m|s.folders.iter().any(|f|f.id==m.1));
+
     let mut clients=s.clients.unwrap_or(crate::client_records::load(db)?);
-    let overviews=s.overviews.unwrap_or(crate::project_overview::load(db)?);
-    db.execute_batch("DELETE FROM item_project_folders; DELETE FROM project_folders; DELETE FROM item_projects; DELETE FROM projects;").map_err(err)?;
+    let overviews=s.overviews.unwrap_or(crate::project_overview::load(db)?).into_iter().filter(|o|affected.contains(&o.project_id));
+    for id in &affected {db.execute("DELETE FROM projects WHERE id=?",[id]).map_err(err)?;}
     for(id,name) in s.projects{db.execute("INSERT INTO projects VALUES(?,?)",params![id,name]).map_err(err)?;}
     for o in overviews {if db.query_row("SELECT EXISTS(SELECT 1 FROM projects WHERE id=?)",[o.project_id],|r|r.get::<_,bool>(0)).map_err(err)?{crate::project_overview::save(db,&o)?;}}
     let exists=|id:i64|db.query_row("SELECT EXISTS(SELECT 1 FROM projects WHERE id=?)",[id],|r|r.get::<_,bool>(0)).unwrap_or(false);
-    clients.contacts.retain(|c|exists(c.project_id));clients.records.retain(|r|exists(r.project_id));crate::client_records::restore(db,clients)?;
+    clients.contacts.retain(|c|affected.contains(&c.project_id)&&exists(c.project_id));clients.records.retain(|r|affected.contains(&r.project_id)&&exists(r.project_id));crate::client_records::restore(db,clients)?;
     for(i,p,f) in s.members{db.execute("INSERT INTO item_projects VALUES(?,?,?)",params![i,p,f]).map_err(err)?;}
     // Insert roots first even after a folder has moved beneath a newer folder.
     let mut pending=s.folders;

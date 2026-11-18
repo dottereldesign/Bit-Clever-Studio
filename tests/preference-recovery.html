@@ -1,0 +1,57 @@
+<!doctype html><html><head><meta charset="UTF-8"><title>Preference recovery checks</title></head><body>
+<div id="root"></div><pre id="check-result" hidden>pending</pre><script type="module">
+import React from 'react';import {createRoot} from 'react-dom/client';
+import App from '/src/App.tsx';import '/src/style.css';
+import {loadLibraryPreferences} from '/src/backupPreferences.ts';
+import {initializeAppearanceDefaults} from '/src/defaultAppearance.ts';
+import {recoveryKey} from '/src/preferenceStorage.ts';
+const phase=sessionStorage.getItem('phase')??'initial';let callback=0;
+if(phase==='initial'){
+ sessionStorage.setItem('preferences',JSON.stringify({'sidebar-width':333,'folder-appearance':null,'folder-labels':{x:'Keep me'},'project-file-layouts':{'project:1':{columns:null}},'research-view':[],'site-shortcuts':[null,{key:'custom',name:'Custom',url:'https://example.test'}],'app-icons':{overrides:{home:{kind:'text',value:{}}}},'personal-studio-default':null}));
+ localStorage.setItem('draft:private','"Keep my draft"');
+ sessionStorage.setItem('fail-save','true');
+}
+window.isTauri=true;window.__TAURI_INTERNALS__={transformCallback:()=>++callback,convertFileSrc:p=>p,invoke:async(command,args)=>{
+ if(command==='library_preferences')return JSON.parse(sessionStorage.getItem('preferences'));
+ if(command==='library_overview')return {root:'C:/PreferenceFixture'};
+ if(command==='save_library_preferences'){
+  if(sessionStorage.getItem('fail-save')==='true')throw Error('Simulated preference save failure');
+  sessionStorage.setItem('preferences',JSON.stringify(args.preferences));return;
+ }
+ if(command==='get_library')return {items:[],projects:[],tags:[],sources:[],root:'C:/PreferenceFixture',scanning:false,undo_entries:[],undo_count:0};
+ if(command.startsWith('plugin:event|'))return ++callback;
+ if(command==='clients_initialise')return false;
+ if(command==='diagnostics_record')return;
+ throw Error(command);
+}};window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener(){}};
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+const assert=(ok,label)=>{if(!ok)throw Error(label);};
+async function until(test,label){const start=performance.now();while(!test()){if(performance.now()-start>8000)throw Error(label);await pause(25);}}
+const button=text=>[...document.querySelectorAll('button')].find(b=>b.textContent===text);
+try{
+ await loadLibraryPreferences();initializeAppearanceDefaults(localStorage,false);
+ createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode,null,React.createElement(App)));
+ await until(()=>document.querySelector('[aria-label="Settings"]'),'App renders after malformed saved preferences');
+ document.querySelector('[aria-label="Settings"]').click();await until(()=>document.getElementById('settings-tab-general'),'Settings');
+ document.getElementById('settings-tab-general').click();await until(()=>button('Reset preferences'),'Recovery controls');
+ assert(localStorage.getItem('draft:private')==='"Keep my draft"','Draft was changed');
+ if(phase==='initial'){
+  assert(localStorage.getItem('sidebar-width')==='333','Valid custom width was lost');
+  assert(JSON.parse(localStorage.getItem('site-shortcuts')).every(v=>v&&typeof v.name==='string'),'Malformed shortcut survived');
+  assert(localStorage.getItem(recoveryKey(localStorage)),'Original malformed values were not retained');
+  button('Reset preferences').click();await until(()=>document.querySelector('[aria-label="Preference recovery"] [role="alert"]'),'Failed reset should remain recoverable');
+  assert(localStorage.getItem('sidebar-width')==='333','Failed save cleared local preferences');
+  sessionStorage.setItem('fail-save','false');sessionStorage.setItem('phase','reset');button('Reset preferences').click();
+ }else if(phase==='reset'){
+  assert(localStorage.getItem('sidebar-width')==='305','Reset did not survive reload');
+  assert(!Object.keys(JSON.parse(sessionStorage.getItem('preferences'))).some(key=>key.startsWith('preference-')),'Recovery data leaked into saved preferences');
+  await until(()=>button('Restore previous preferences'),'Previous settings retained across reload');
+  sessionStorage.setItem('phase','restored');button('Restore previous preferences').click();
+ }else{
+  assert(localStorage.getItem('sidebar-width')==='333','Restore did not survive reload');
+  assert(JSON.parse(localStorage.getItem('folder-labels')).x==='Keep me','Custom labels lost during reset/restore');
+  assert(localStorage.getItem(recoveryKey(localStorage)),'Original malformed values lost during reset');
+  document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks:['Malformed preferences recover before App rendering','Failed save restores local preferences without reloading','Reset and restore persist across actual reloads','Drafts and original malformed values remain intact']});
+ }
+}catch(error){document.getElementById('check-result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack,phase});}
+</script></body></html>
