@@ -25,6 +25,7 @@ export default function ThumbnailEnlargement(props: Props) {
   const overlay = useRef<HTMLDivElement>(null), stage = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const progress = useRef(0), target = useRef(0), frame = useRef(0), lastTime = useRef(0);
+  const pan = useRef(0);
   const previousFocus = useRef<HTMLElement | null>(null);
   const systemMotion = useRef(window.matchMedia("(prefers-reduced-motion: reduce)"));
 
@@ -32,7 +33,7 @@ export default function ThumbnailEnlargement(props: Props) {
     const current = active.current;
     if (!current) return;
     cancelAnimationFrame(frame.current); frame.current = 0;
-    active.current = null; progress.current = 0; target.current = 0;
+    active.current = null; progress.current = 0; target.current = 0; pan.current = 0;
     current.source.classList.remove("thumbnail-enlargement-source");
     setSession(null); setOriginal(""); latest.current.onActiveChange(false);
     const focus = previousFocus.current;
@@ -51,15 +52,19 @@ export default function ThumbnailEnlargement(props: Props) {
     const next = reduced ? target.current : progress.current + (target.current - progress.current) * (1 - Math.exp(-elapsed / 65));
     progress.current = Math.abs(next - target.current) < .0005 ? target.current : next;
     const p = progress.current;
-    // The maximum is a whole-image view, never a cropped magnifying lens.
+    // Keep ordinary images fitted, but never shrink a tall thumbnail to fit its height.
     const ratio = current.origin.width / current.origin.height;
-    const width = Math.max(1, Math.min(innerWidth - 48, (innerHeight - 112) * ratio));
+    const width = Math.max(1, Math.min(innerWidth - 48, Math.max((innerHeight - 112) * ratio, current.origin.width * 2)));
     const height = width / ratio;
     const scale = Math.pow(current.origin.width / width, 1 - p);
     const cx = current.origin.x + current.origin.width / 2;
     const cy = current.origin.y + current.origin.height / 2;
     const x = cx + (innerWidth / 2 - cx) * p - width * scale / 2;
-    const y = cy + ((innerHeight - 24) / 2 - cy) * p - height * scale / 2;
+    const displayedHeight = height * scale;
+    const overflow = Math.max(0, displayedHeight - (innerHeight - 112));
+    pan.current = clamp(pan.current, 0, overflow);
+    const destinationY = height > innerHeight - 112 ? 32 + height / 2 : (innerHeight - 24) / 2;
+    const y = cy + (destinationY - cy) * p - displayedHeight / 2 - pan.current * p;
     stage.current.style.width = `${width}px`;
     stage.current.style.height = `${height}px`;
     stage.current.style.transform = `translate3d(${x}px,${y}px,0) scale(${scale})`;
@@ -94,11 +99,18 @@ export default function ThumbnailEnlargement(props: Props) {
         if (!origin.width || !origin.height) return;
         const next = { item, source: image, thumbnail: image.currentSrc || image.src, origin };
         active.current = next; previousFocus.current = document.activeElement as HTMLElement;
-        progress.current = 0; target.current = 0;
+        progress.current = 0; target.current = 0; pan.current = 0;
         latest.current.onActiveChange(true); setSession(next);
       } else {
         event.preventDefault(); event.stopImmediatePropagation();
         if (!event.ctrlKey) {
+          const bounds = stage.current?.getBoundingClientRect();
+          if (target.current >= .1 && bounds && bounds.height > innerHeight - 112) {
+            const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? innerHeight - 112 : 1;
+            pan.current = clamp(pan.current + event.deltaY * unit, 0, bounds.height - (innerHeight - 112));
+            wake();
+            return;
+          }
           // A tiny Ctrl-wheel after pasting can create an almost invisible
           // enlargement. Ordinary scrolling means resume browsing, not lock
           // the app behind that overlay until the user discovers Escape.

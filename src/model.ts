@@ -51,6 +51,7 @@ export type Library = {
   redo_label?: string | null;
   redo_count?: number;
   categories?: string[];
+  deleted_categories?: string[];
   items: Item[];
   projects: Label[];
   tags: Label[];
@@ -182,7 +183,7 @@ export const categoryLabel = (name: string): string => {
   /^(2d|3d|ui|ux|ai|ar|vr|css|html)$/i.test(word)?word.toUpperCase():word===word.toLocaleLowerCase()?word.charAt(0).toLocaleUpperCase()+word.slice(1):word
 ) || "Uncategorised";
 };
-export const libraryCategories = (lib: Library): string[] => [...new Set([...(lib.categories ?? []), ...lib.sources.filter(s=>s.startsWith("Design/")).map(s=>s.slice(7).split('/')[0]), ...lib.items.filter(i=>i.kind!=="link").flatMap(i=>designFoldersOf(i))].filter(name=>!!name&&!isWebDesign(name)&&!isComponent(name)&&name!==allComponents&&name.toLowerCase()!=="captures"))].sort((a,b)=>a.localeCompare(b));
+export const libraryCategories = (lib: Library): string[] => [...new Set([...(lib.categories ?? []), ...lib.sources.filter(s=>s.startsWith("Design/")).map(s=>s.slice(7).split('/')[0]), ...lib.items.filter(i=>i.kind!=="link").flatMap(i=>designFoldersOf(i))].filter(name=>!lib.deleted_categories?.includes(name)&&!!name&&!isWebDesign(name)&&!isComponent(name)&&name!==allComponents&&name.toLowerCase()!=="captures"))].sort((a,b)=>a.localeCompare(b));
 
 
 export const designFoldersOf=(item:Item):string[]=>{

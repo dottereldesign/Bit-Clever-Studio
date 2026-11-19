@@ -61,9 +61,16 @@ try{
  content.scrollTop=0;await pause(300);const tall=document.querySelector('[data-item-id="149"] .card-open > img');assert(tall?.naturalHeight>tall?.naturalWidth,'Tall thumbnail missing');
  const tr=tall.getBoundingClientRect();await wheel(tr.left+tr.width/2,Math.min(tr.top+60,innerHeight-30),-300);
  for(let n=0;n<3;n++)await wheel(innerWidth-10,innerHeight/2,-300);await pause(400);
- const tallBox=stage().getBoundingClientRect();assert(tallBox.top>=20&&tallBox.bottom<innerHeight-65&&Math.abs(tallBox.width/tallBox.height-400/1500)<.01,'Tall image cropped');
+ const tallBox=stage().getBoundingClientRect();assert(tallBox.width>tr.width*1.5&&tallBox.top>=20&&Math.abs(tallBox.width/tallBox.height-400/1500)<.01,'Tall image failed to enlarge');
+ const gridPosition=content.scrollTop;
+ await wheel(innerWidth/2,innerHeight/2,300,false);await pause(150);
+ assert(overlay()&&stage().getBoundingClientRect().top<tallBox.top-200&&content.scrollTop===gridPosition,'Tall image did not pan independently');
+ await wheel(innerWidth/2,innerHeight/2,20000,false);await pause(150);
+ assert(Math.abs(stage().getBoundingClientRect().bottom-(innerHeight-80))<2,'Bottom of tall image unreachable');
+ await wheel(innerWidth/2,innerHeight/2,-20000,false);await pause(150);
+ assert(Math.abs(stage().getBoundingClientRect().top-32)<2,'Top of tall image unreachable');
  document.querySelector('.thumbnail-enlargement-close').click();await until(()=>!overlay(),'Close button');
- checks.push('Very tall references remain uncropped at maximum size');
+ checks.push('Tall references enlarge and scroll from top to bottom without moving the gallery');
  image=visibleImage();const normal=image.getBoundingClientRect();await click(normal.left+normal.width/2,normal.top+normal.height/2);await until(()=>image.closest('.card').classList.contains('selected'),'Normal click selects');assert(!document.querySelector('.viewer'),'Gallery click opened full viewer');image.closest('button').focus();key(' ');await until(()=>document.querySelector('.quick-preview'),'Space opens preview');key('Escape');await until(()=>!document.querySelector('.quick-preview'),'Escape closes preview');
  checks.push('Ordinary gallery clicks select; Space previews and Escape closes');
  document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches});

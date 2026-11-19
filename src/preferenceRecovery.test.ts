@@ -84,3 +84,8 @@ test('active colours retain independent channels and reject malformed imported c
  assert.deepEqual(JSON.parse(s.getItem('active-colours')!),normalizePreference('active-colours',value));
  assert.deepEqual(readPreferenceValues(s)['active-colours'],normalizePreference('active-colours',value));
 });
+
+test('Code folders recover safe hierarchy, component memberships and column counts',()=>{
+ const value=normalizePreference('code-library',{folders:[{id:'a',name:'A',parent:'b',items:['obsidian','unknown','obsidian'],columns:99},{id:'b',name:'B',parent:'a',items:[],columns:0},{id:'a',name:'Duplicate',parent:'all'}]}) as {folders:{id:string;parent:string;items:string[];columns:number}[]};
+ assert.equal(value.folders.filter(f=>f.id==='all').length,1);assert.equal(value.folders.filter(f=>f.id==='a').length,1);assert.equal(value.folders.find(f=>f.id==='a')?.parent,'all');assert.deepEqual(value.folders.find(f=>f.id==='a')?.items,['obsidian']);assert.equal(value.folders.find(f=>f.id==='a')?.columns,4);assert.equal(value.folders.find(f=>f.id==='b')?.columns,1);
+});

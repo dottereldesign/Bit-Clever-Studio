@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef, type ReactNode, type HTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronRight, LayoutDashboard, Folder, MoreHorizontal, X } from 'lucide-react';
+import { ChevronRight, Folder, MoreHorizontal, X } from 'lucide-react';
 import type { Item, Label, ProjectFolder } from './model';
 import './projectFolders.css';
 
@@ -68,11 +68,10 @@ export function ProjectTree({project,folders,items,active,overviewActive,scope,o
   return <div className="project-tree" ref={tree}>
     <div className={`project-row ${active&&scope===null?'active':''}`} data-project-id={project.id} data-project-name={project.name} {...dragProps(null)} onContextMenu={e=>context(e,null)}>
       <button className="folder-chevron" aria-expanded={expanded} aria-label={`${expanded?'Collapse':'Expand'} ${project.name}`} onClick={()=>setExpanded(!expanded)}><ChevronRight size={12} style={{transform:expanded?'rotate(90deg)':undefined}}/></button>
-      <button className="nav-item" {...homeProps} onClick={()=>open(null)}>{icon}<span>{project.name}</span><small>{project.count||''}</small></button>
+      <button className="nav-item" {...homeProps} data-folder-order="projects" aria-current={active&&overviewActive?'page':undefined} onClick={()=>open(null)}>{icon}<span>{project.name}</span><small>{project.count||''}</small></button>
       <button className="folder-more" aria-label={`Options for ${project.name}`} onClick={e=>context(e,null)}><MoreHorizontal size={15}/></button>
     </div>
     {expanded&&<div className="project-folder-list">
-      <button className={`nav-item project-overview-link ${active&&overviewActive?'active':''}`} aria-current={active&&overviewActive?'page':undefined} data-project-overview={project.id} onClick={()=>open(null)}><LayoutDashboard size={14}/><span>Overview</span></button>
       <button className={`nav-item project-scope ${active&&scope==='unfiled'?'active':''}`} data-project-unfiled={project.id} {...dragProps('unfiled')} onClick={()=>open('unfiled')}>Unfiled<small>{counts.unfiled||''}</small></button>
       {orderedFolders(own.filter(f=>f.parent_id===null)).map(f=>row(f,0))}
     </div>}

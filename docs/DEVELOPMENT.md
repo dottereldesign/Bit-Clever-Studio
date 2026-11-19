@@ -186,3 +186,12 @@ The tests do not substitute for manual NVDA/Narrator speech verification or prov
 For backup coverage and the disposable native restore command (`npm run verify:restore`), see [backup verification](BACKUPS.md). With no arguments it uses only synthetic fixtures; `-- --folder "PATH"` explicitly selects a complete export for read-only source verification.
 
 For disposable child-process interruption tests and recovery guarantees/limits, see [interrupted operations](RECOVERY.md). Run `npm run test:native -- interruption_tests`; do not invoke the ignored crash worker directly or induce failures in Design Dev.
+
+
+### Remembered folder views
+
+The header thumbnail-size slider and sort menu save independently for each library folder/collection and project subfolder, including project root and Unfiled. Project Files also remembers each subfolder's details/tiles/columns mode, visible columns and name-column width. Navigating, searching or filtering does not overwrite another folder's settings. View changes support Undo/Redo and persist with library preferences across restarts; backups remap project/subfolder IDs when restored.
+
+Customise app → Library → Default thumbnail size supplies the starting size for folders without an override. Existing global size and project layout preferences provide the initial defaults; changing a particular folder does not change those defaults. Layout choices for custom General collections remain part of each collection's existing customisation.
+
+Run `node scripts/check-grid-return.mjs folder-views` for isolated folder switching, reload, Undo and persistence checks. Native export tests cover remapping views into a library with conflicting old project/folder IDs.

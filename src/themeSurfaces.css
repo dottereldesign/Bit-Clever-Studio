@@ -1063,14 +1063,6 @@
     background: var(--app-background);
     outline: 2px solid var(--app-accent)
 }
-:root[data-app-theme]:not([data-app-theme="studio"]) .projects .project-overview-link {
-    background: color-mix(in srgb,var(--section-accent,var(--app-tint)) 10%,transparent);
-    color: var(--section-ink,var(--app-accent))
-}
-:root[data-app-theme]:not([data-app-theme="studio"]) .projects .project-overview-link:hover,:root[data-app-theme]:not([data-app-theme="studio"]) .projects .project-overview-link.active {
-    background: color-mix(in srgb,var(--section-accent,var(--app-tint)) 19%,transparent);
-    color: var(--section-ink,var(--app-accent))
-}
 :root[data-app-theme]:not([data-app-theme="studio"]) .moodboard-selection {
     color: var(--muted,var(--app-muted))
 }

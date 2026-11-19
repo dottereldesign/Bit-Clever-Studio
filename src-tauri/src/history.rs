@@ -22,12 +22,14 @@ pub enum Patch {
     Rename(bool, i64, String),
     Created(bool, String),
     Deleted(bool, i64, String, Vec<(i64, i64)>),
+    DeletedFolders(Vec<String>),
     CreatedCategory(String),
     DeletedCategory(String),
     RemoveLabel(bool, i64),
 }
 
 pub fn snapshot(db: &Connection, c: &Change) -> Result<Option<(String, Vec<Patch>)>> {
+    if c.action=="delete_category" { return Ok(Some(("Delete folder".into(),crate::category_folders::snapshot(db,c.value.as_deref().unwrap_or(""))?))); }
     if c.action=="close_studio_lead"{return Ok(Some(("Close lead".into(),crate::lead_close::snapshot(db,c.value.as_deref().unwrap_or(""))?)));}
     if c.action=="update_studio"||["convert_studio_lead","win_studio_lead"].contains(&c.action.as_str()){let id=if c.action=="update_studio"{let v:serde_json::Value=serde_json::from_str(c.value.as_deref().unwrap_or("")).map_err(err)?;v["id"].as_str().ok_or("Missing record")?.to_owned()}else{c.value.clone().unwrap_or_default()};let mut patches=vec![Patch::Studio(crate::studio::snapshot(db,&id)?)];if ["convert_studio_lead","win_studio_lead"].contains(&c.action.as_str()){if let Some(lead)=crate::studio::get(db,&id)? {let client=crate::clients::lead_client(db,&lead,c.target)?;patches.push(Patch::Studio(crate::studio::snapshot(db,&client)?));}patches.push(Patch::ProjectOrganisation(crate::project_folders::snapshot_with_clients(db)?));for e in crate::studio::load(db)?.into_iter().filter(|r|r.kind=="contact"){patches.push(Patch::Studio(crate::studio::snapshot(db,&e.id)?));}}return Ok(Some((if ["convert_studio_lead","win_studio_lead"].contains(&c.action.as_str()){"Hand over lead to project"}else{"Edit studio record"}.into(),patches)));}
     if c.action=="update_client_records"{let mut patches=vec![Patch::ClientEdit(crate::client_records::snapshot(db,c.target.unwrap_or(0),c.value.as_deref().unwrap_or(""))?)];let v:serde_json::Value=serde_json::from_str(c.value.as_deref().unwrap_or("")).map_err(err)?;if v["type"]=="contact"{let cid=v["id"].as_str().unwrap_or("");let p=c.target.unwrap_or(0);let shared=crate::client_records::load(db)?.contacts.iter().find(|r|r.project_id==p&&r.id==cid).map(crate::studio::contact_id).unwrap_or(format!("project:{p}:{cid}"));patches.push(Patch::Studio(crate::studio::snapshot(db,&shared)?));if let Some(company)=v["patch"]["company"].as_str(){patches.push(Patch::Studio(crate::studio::snapshot(db,&crate::studio::company_id(&shared,company))?));}}return Ok(Some(("Edit client records".into(),patches)));}
@@ -41,6 +43,7 @@ pub fn snapshot(db: &Connection, c: &Change) -> Result<Option<(String, Vec<Patch
     let label = match c.action.as_str() {
         "rate_links"=>{for id in &c.ids{let rating=db.query_row("SELECT rating FROM items WHERE id=? AND kind='link'",[id],|r|r.get::<_,Option<i64>>(0)).optional().map_err(err)?;if let Some(rating)=rating{if rating!=c.value.as_deref().and_then(|v|v.parse::<i64>().ok()){patches.push(Patch::Rating(*id,rating));}}}"Rate links"},
         "set_category" | "remove_component_folder" | "remove_design_folder" => {
+            if c.action=="set_category" && crate::category_folders::deleted(db)?.iter().any(|n|n==value) { patches.push(Patch::DeletedFolders(crate::category_folders::deleted(db)?)); }
             let mut ids=c.ids.clone();ids.sort();ids.dedup();
             for id in ids {
                 let source: Option<String> = db.query_row("SELECT source FROM items WHERE id=?",[id],|r|r.get(0)).optional().map_err(err)?;
@@ -114,6 +117,7 @@ pub fn snapshot(db: &Connection, c: &Change) -> Result<Option<(String, Vec<Patch
         }
         "create_category" => {
             let name=c.name.as_deref().unwrap_or("").trim();
+            if crate::category_folders::deleted(db)?.iter().any(|n|n==name) { patches.push(Patch::DeletedFolders(crate::category_folders::deleted(db)?)); }
             let exists:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM categories WHERE name=?)",[name],|r|r.get(0)).map_err(err)?;
             if !exists {patches.push(Patch::CreatedCategory(name.to_owned()));}
             "Create category"
@@ -176,6 +180,7 @@ fn inverse(db: &Connection, patch: &Patch) -> Result<Patch> {
             let rows=stmt.query_map([id],|r|Ok((r.get(0)?,r.get(1)?))).map_err(err)?;
             Patch::Deleted(*project,*id,name,rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)?)
         },
+        Patch::DeletedFolders(_) => Patch::DeletedFolders(crate::category_folders::deleted(db)?),
         Patch::CreatedCategory(name) => Patch::DeletedCategory(name.clone()),
         Patch::DeletedCategory(name) => Patch::CreatedCategory(name.clone()),
     })
@@ -236,6 +241,7 @@ fn transfer(db:&Connection,redo:bool)->Result<()> {
                 }
             },
             Patch::RemoveLabel(project,id)=>{db.execute(&format!("DELETE FROM {} WHERE id=?",if project{"projects"}else{"tags"}),[id]).map_err(err)?;},
+            Patch::DeletedFolders(names)=>crate::category_folders::set_deleted(db,&names)?,
             Patch::DeletedCategory(name)=>{db.execute("INSERT INTO categories(name) VALUES(?)",[name]).map_err(err)?;},
             Patch::CreatedCategory(name)=>{
                 let used:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM item_categories WHERE name=?)",[&name],|r|r.get(0)).map_err(err)?;

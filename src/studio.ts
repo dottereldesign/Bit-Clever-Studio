@@ -47,7 +47,7 @@ export type StudioEntry = {
     updated: number;
 };
 export type StudioRoute = {
-    section: 'business' | 'analytics' | 'marketing' | 'leads' | 'research' | 'clients' | 'client' | 'client_entry';
+    section: 'code' | 'business' | 'analytics' | 'marketing' | 'leads' | 'research' | 'clients' | 'client' | 'client_entry';
     page: string;
     id?: string;
     tab?: string;

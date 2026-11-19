@@ -3,9 +3,9 @@ import React from 'react';import {createRoot} from 'react-dom/client';import App
 const image='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="tan"/></svg>');
 const item=(id,name,source,kind='image')=>({id,name,source,kind,path:`C:/${source}/${name}.png`,modified:1,added:id,missing:false,tags:[1],projects:[7],favourites:[7]});
 const library={items:[item(1,'Logo','Design/3d'),item(2,'Scene','Design/3d'),item(3,'Brand','Design/branding'),{...item(4,'Photo','Photography'),category:'Photography'},item(5,'Movie','Videos','video'),item(6,'Landing','Design/web_design'),{...item(7,'Nav','Design/branding'),category:'Web Design'}],categories:['3d','branding','Photography'],projects:[{id:7,name:'Website',count:5}],tags:[{id:1,name:'Keep',count:5}],sources:['Design','Design/3d','Design/branding','Photography','Videos'],root:'C:/Design',scanning:false};
-const history=[];const calls=[];let callback=0;window.isTauri=true;window.__TAURI_INTERNALS__={transformCallback:()=>++callback,convertFileSrc:()=>image,invoke:async(command,args)=>{
+const history=[];const calls=[];let failDelete=false;let callback=0;window.isTauri=true;window.__TAURI_INTERNALS__={transformCallback:()=>++callback,convertFileSrc:()=>image,invoke:async(command,args)=>{
  calls.push({command,args});if(command==='save_library_preferences')return;if(command==='storage_usage')return {bytes:100,data_bytes:10,library_bytes:80,app_bytes:10,partial:false};if(command==='get_library')return {...structuredClone(library),undo_label:history.length?'Change category':null};if(command.startsWith('plugin:event|'))return ++callback;if(command==='get_media')return 'C:/mock.png';
- if(command==='update'){const c=args.change;if(c.action==='undo_organisation'){library.items=history.pop();return;}if(c.action==='set_category'){history.push(structuredClone(library.items));for(const i of library.items.filter(i=>c.ids.includes(i.id))){
+ if(command==='update'){const c=args.change;if(c.action==='delete_category'){if(failDelete)throw Error('Test save failure');history.push(structuredClone(library.items));library.deleted_categories=[...(library.deleted_categories??[]),c.value];return;}if(c.action==='undo_organisation'){library.items=history.pop();return;}if(c.action==='set_category'){history.push(structuredClone(library.items));for(const i of library.items.filter(i=>c.ids.includes(i.id))){
  i.category_added={...i.category_added,[c.value]:Date.now()};if(c.value.startsWith('Components / '))i.category_added['All Components']=Date.now();
  const previous=categoryOf(i),designs=new Set(i.design_folders??[]),folders=new Set(i.component_folders??[]);
  if(!previous.startsWith('Components / ')&&(previous||!designs.size))designs.add(previous);
@@ -27,6 +27,7 @@ const choose=name=>[...document.querySelectorAll('.category-picker button')].fin
 const checks=[];
 try{
  await until(()=>category('3d')&&cards().length===5,'initial media');
+ const allDesigns=[...document.querySelectorAll('nav[aria-label="Design Inspo"] button')].find(b=>b.querySelector('span')?.textContent.trim()==='All Designs');assert(allDesigns?.querySelector('small')?.textContent==='5','All Designs total must match its unfiltered collection');
  assert(category('Photography')&&!document.querySelector('nav[aria-label="Design Inspo"]').textContent.includes('Videos'),'Photography category missing or Videos leaked into categories');
  assert(![...document.querySelectorAll('nav[aria-label=Library] button span')].some(s=>s.textContent==='Photography'),'Photography still in main navigation');
  assert(!category('Web Design')&&!category('web_design'),'Web Design still listed in Categories');
@@ -73,7 +74,7 @@ try{
  checks.push('Component drag adds memberships; checkboxes add and remove individual folders; counts and All Components stay correct');
  checks.push('Source and assigned Web Design references move into Components, folder moves preserve aggregate membership, and all four sidebar sections collapse independently');
  checks.push('Categories replace Sources; Photography lives in Categories; Facebook Videos stays in main navigation');
- category('3d').click();await until(()=>cards().length===2,'3d category');assert(document.querySelector('.card-remove-folder'),'Design quick removal missing');assert([...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='All Designs'),'All Designs label missing');
+ category('3d').click();await until(()=>cards().length===2,'3d category');assert(document.querySelector('.card-remove-folder'),'Design quick removal missing');assert([...document.querySelectorAll('button')].some(b=>b.querySelector('span')?.textContent.trim()==='All Designs'),'All Designs label missing');
  for(const id of [1,2]){document.querySelector(`[data-item-id="${id}"] .card-select`).click();await pause(30);}
  assert(document.querySelectorAll('.card-select[aria-pressed="true"]').length===2,'Multi-selection failed');
  const data=new DataTransfer();let nativeGhost;const setDragImage=data.setDragImage.bind(data);data.setDragImage=(element,x,y)=>{nativeGhost=element;setDragImage(element,x,y);};document.querySelector('[data-item-id="1"]').dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:data}));
@@ -143,6 +144,21 @@ try{
  for(const key of ['k','f','/']){hotkey(key,key!=='/');await until(()=>document.activeElement?.getAttribute('aria-label')==='Search library'&&!document.querySelector('.search-popup').hidden,'Search shortcut '+key);document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await until(()=>document.querySelector('.search-popup').hidden,'Dismiss search');}
  hotkey(',',true);await until(()=>document.querySelector('#settings-tab-help'),'Settings shortcut');document.querySelector('#settings-tab-help').click();await until(()=>document.querySelector('[aria-label="Keyboard shortcuts"]'),'Help tab');assert(document.querySelector('[aria-label="Keyboard shortcuts"]').textContent.includes('Ctrl K'),'Search shortcut missing in settings');hotkey('Escape');
  checks.push('Storage lives in the header; search is hidden until /, Ctrl F or Ctrl K; Ctrl comma opens Settings with keyboard shortcuts');
+
+ await until(()=>!document.querySelector('.settings-hub'),'Settings closed');
+ const folderContext=name=>category(name).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:130,clientY:150}));
+ const menuButton=text=>[...document.querySelectorAll('[role="menuitem"]')].find(b=>b.textContent.trim()===text);
+ folderContext('branding');await until(()=>menuButton('Star folder'),'Design folder menu');assert(menuButton('Change icon')&&menuButton('Change icon colour'),'Design appearance actions missing');menuButton('Star folder').click();await until(()=>category('branding').querySelector('[aria-label="Starred folder"]'),'Starred Design folder');
+ folderContext('branding');await until(()=>menuButton('Unstar folder'),'Unstar action');menuButton('Unstar folder').click();await until(()=>!category('branding').querySelector('[aria-label="Starred folder"]'),'Unstar Design folder');
+ for(const name of ['branding','Components / Headers']){
+   folderContext(name);await until(()=>menuButton('Delete folder…'),'Delete menu action');menuButton('Delete folder…').click();await until(()=>document.querySelector('dialog[aria-label="Delete folder?"]'),'Confirm deletion');
+   assert(document.querySelector('dialog').textContent.includes('will not be deleted'),'Preservation explanation missing');await until(()=>document.activeElement.textContent==='Cancel','Delete confirmation focuses Cancel');
+   const before=calls.filter(c=>c.command==='update'&&c.args.change.action==='delete_category').length;button('Cancel').click();await until(()=>!document.querySelector('dialog'),'Cancel deletion');assert(category(name),'Cancel removed folder');assert(calls.filter(c=>c.command==='update'&&c.args.change.action==='delete_category').length===before,'Cancel submitted deletion');
+ }
+ folderContext('branding');await until(()=>menuButton('Delete folder…'),'Delete menu');menuButton('Delete folder…').click();await until(()=>document.querySelector('dialog'),'Dialog');failDelete=true;button('Delete folder').click();await until(()=>document.querySelector('dialog [role="alert"]'),'Failure feedback');assert(category('branding'),'Failure removed folder');failDelete=false;button('Delete folder').click();await until(()=>!category('branding')&&!document.querySelector('dialog'),'Confirmed deletion');assert(library.items.length===7,'Folder deletion lost items');
+ folderContext('Components / Headers');await until(()=>menuButton('Delete folder…'),'Component deletion menu');menuButton('Delete folder…').click();await until(()=>document.querySelector('dialog'),'Component dialog');button('Delete folder').click();await until(()=>!category('Components / Headers'),'Built-in component deleted');
+ folderContext('Components / Uncategorised');await until(()=>document.querySelector('[role="menu"]'),'Inbox menu');assert(!menuButton('Delete folder…'),'Inbox must not be deletable');document.querySelector('[role="menu"]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+ checks.push('Design folder appearance actions; safe deletion confirmation, cancel, failure/retry, built-in component removal and protected inbox');
  document.getElementById('check-result').textContent=JSON.stringify({ok:true,checks,width:innerWidth});
 }catch(error){document.getElementById('check-result').textContent=JSON.stringify({ok:false,error:String(error),stack:error.stack,checks,searchHidden:document.querySelector(".search-popup")?.hidden,focus:document.activeElement?.outerHTML.slice(0,250),dialogs:[...document.querySelectorAll("[role=dialog],.modal,.item-menu")].map(n=>n.textContent.slice(0,100)),calls:calls.slice(-6)});}
 </script></body></html>

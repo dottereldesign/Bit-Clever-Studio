@@ -18,6 +18,7 @@ import './projectWorkspace.css';
 type Info={id:number;bytes:number|null;modified:number|null};
 type Layout='details'|'tiles'|'columns';
 type Preferences={layout:Layout;columns:string[];nameWidth:number};
+type StoredPreferences=Preferences&{folders?:Record<string,Preferences>;defaults?:Preferences};
 const initial:Preferences={layout:'details',columns:['type','size','modified','rating'],nameWidth:360};
 export const fileType=(item:Item)=>item.kind==='link'?'Link':item.path.split(/[\\/]/).at(-1)?.split('.').slice(1).at(-1)?.toUpperCase()||'File';
 const bytes=(value:number|null|undefined)=>value==null?'—':value<1024?`${value} B`:value<1024**2?`${(value/1024).toFixed(1)} KB`:value<1024**3?`${(value/1024**2).toFixed(1)} MB`:`${(value/1024**3).toFixed(2)} GB`;
@@ -33,9 +34,15 @@ export default function ProjectWorkspace({relatedStudio,fileToolbar,section,chan
   drop:(data:DataTransfer,folder:number|null)=>void;selected:Set<number>;select:(item:Item,event:React.MouseEvent)=>void;
   menu:(item:Item,event:React.MouseEvent)=>void;preview:(item:Item)=>void;size:number;order:string;search:string;scroller:React.RefObject<HTMLDivElement|null>;
 }) {
-  const [preferences,setPreferences]=useHistoryState<Record<string,Preferences>>('project-file-layouts',()=>{try{return JSON.parse(localStorage.getItem('project-file-layouts')??'{}');}catch{return {};}},'Project file layout');
-  const prefs={...initial,...preferences[`project:${project.id}`]};
-  const save=(value:Partial<Preferences>)=>setPreferences(previous=>({...previous,[`project:${project.id}`]:{...initial,...previous[`project:${project.id}`],...value}}));
+  const [preferences,setPreferences]=useHistoryState<Record<string,StoredPreferences>>('project-file-layouts',()=>{try{return JSON.parse(localStorage.getItem('project-file-layouts')??'{}');}catch{return {};}},'Project file layout');
+  const key=`project:${project.id}`,folderKey=typeof scope==='number'?`folder:${scope}`:'unfiled';
+  const projectPrefs=preferences[key]??initial;
+  const defaults=projectPrefs.defaults??{layout:projectPrefs.layout,columns:projectPrefs.columns,nameWidth:projectPrefs.nameWidth};
+  const prefs={...initial,...(scope===null?projectPrefs:projectPrefs.folders?.[folderKey]??defaults)};
+  const save=(value:Partial<Preferences>)=>setPreferences(previous=>{
+    const current=previous[key]??initial;
+    return {...previous,[key]:scope===null?{...current,...value,defaults}:{...current,defaults,folders:{...current.folders,[folderKey]:{...prefs,...value}}}};
+  });
   const [info,setInfo]=useState<Map<number,Info>>(new Map()),[newFolder,setNewFolder]=useState(false),[name,setName]=useState(''),[busy,setBusy]=useState(false);
   const [sort,setSort]=useState<'name'|'type'|'size'|'modified'|null>(null),[descending,setDescending]=useState(false);
   useEffect(()=>setSort(null),[order]);

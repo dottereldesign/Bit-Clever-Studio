@@ -1,7 +1,9 @@
+import {normalizeCodePrefs} from './codeLibraryData';
+import {folderSorts} from './folderViews';
 import {normalizeActiveColours} from './activeColours';
 import {defaultAppearance} from './defaultAppearance';
 
-export const preferenceKeys=['active-colours','sidebar-hidden-sections','app-theme','app-colour-sources','personal-studio-default','settings-appearance','customise-tab-order','analytics-appearance','home-overview','tab-appearance','cta-appearance','app-branding','clients-startup','clients-last-seen','sidebar-section-order','sidebar-active-green','sidebar-emerald-default-applied','research-view','onboarding','sidebar-section-colours','studio-layouts','project-file-layouts','selection-style','colour-history','collection-shortcuts','site-shortcuts','tile-size','sidebar-width','sidebar-section-style','home-style','home-appearance','reduce-motion','sidebar-layout','app-icons','folder-labels','folder-appearance','sidebar-folder-order','home-plan','home-tiles'];
+export const preferenceKeys=['code-library','active-colours','sidebar-hidden-sections','app-theme','app-colour-sources','personal-studio-default','settings-appearance','customise-tab-order','analytics-appearance','home-overview','tab-appearance','cta-appearance','app-branding','clients-startup','clients-last-seen','sidebar-section-order','sidebar-active-green','sidebar-emerald-default-applied','research-view','onboarding','sidebar-section-colours','studio-layouts','project-file-layouts','folder-view-settings','selection-style','colour-history','collection-shortcuts','site-shortcuts','tile-size','sidebar-width','sidebar-section-style','home-style','home-appearance','reduce-motion','sidebar-layout','app-icons','folder-labels','folder-appearance','sidebar-folder-order','home-plan','home-tiles'];
 export const isPreference=(key:string)=>preferenceKeys.includes(key)||key.startsWith('sidebar-open:');
 export const isStoredPreference=(key:string)=>isPreference(key)||key==='recent-work'||/^(project-scroll|project-files-location|client-view):/.test(key);
 export const isRecord=(value:unknown):value is Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value);
@@ -58,6 +60,7 @@ export function normalizePreference(key:string,value:unknown):unknown {
   if(key==='collection-shortcuts'||key==='site-shortcuts')return shortcuts(value);
   if(['sidebar-hidden-sections','customise-tab-order','sidebar-section-order'].includes(key))return strings(value);
   if(key.startsWith('sidebar-open:')||['reduce-motion','sidebar-emerald-default-applied'].includes(key))return boolean(value);
+  if(key==='code-library')return normalizeCodePrefs(value);
   if(key==='active-colours')return normalizeActiveColours(value);
   if(key==='sidebar-active-green')return oneOf(value,['soft','sage','mint','lime','olive','fern','eucalyptus','forest','emerald','pine']);
   const ranges:Record<string,[number,number]>={'tile-size':[80,1000],'sidebar-width':[160,600],'selection-style':[1,50],'sidebar-section-style':[1,1000],'home-style':[1,20],'sidebar-layout':[1,20]};
@@ -69,7 +72,11 @@ export function normalizePreference(key:string,value:unknown):unknown {
   if(key==='studio-layouts')return map(value,v=>oneOf(v,['table','cards','board','list']));
   if(key==='research-view')return map(value,string);
   if(key==='folder-appearance')return map(value,v=>isRecord(v)?Object.fromEntries(Object.entries(v).filter(([k,x])=>(k==='color'&&typeof x==='string')||(k==='starred'&&typeof x==='boolean'))):undefined);
-  if(key==='project-file-layouts')return map(value,v=>isRecord(v)?{layout:oneOf(v.layout,['details','tiles','columns'])??'details',columns:(strings(v.columns)??['type','size','modified','rating']).filter(c=>['type','size','modified','rating'].includes(c)),nameWidth:Math.max(120,Math.min(1000,number(v.nameWidth)??360))}:undefined);
+  if(key==='folder-view-settings')return map(value,group=>map(group,v=>isRecord(v)?{...(number(v.size)!==undefined?{size:Math.max(140,Math.min(420,v.size as number))}:{}),...(oneOf(v.sort,folderSorts)?{sort:v.sort}:{})}:undefined));
+  if(key==='project-file-layouts'){
+    const clean=(v:unknown)=>isRecord(v)?{layout:oneOf(v.layout,['details','tiles','columns'])??'details',columns:(strings(v.columns)??['type','size','modified','rating']).filter(c=>['type','size','modified','rating'].includes(c)),nameWidth:Math.max(120,Math.min(1000,number(v.nameWidth)??360))}:undefined;
+    return map(value,v=>isRecord(v)?{...clean(v),...(isRecord(v.defaults)?{defaults:clean(v.defaults)}:{}),...(isRecord(v.folders)?{folders:map(v.folders,clean)}:{})}:undefined);
+  }
   if(key==='app-icons')return isRecord(value)?{folder:string(value.folder)??'folder',overrides:map(value.overrides,v=>isRecord(v)&&oneOf(v.kind,['symbol','image','asset','text'])&&typeof v.value==='string'?{kind:v.kind,value:v.value}:undefined)??{}}:undefined;
   if(key==='colour-history')return Array.isArray(value)?value.filter(v=>isRecord(v)&&typeof v.hex==='string'&&/^#[0-9a-f]{6}$/i.test(v.hex)).map(v=>({hex:v.hex,projects:strings(v.projects)??[]})):undefined;
   if(key==='home-tiles')return homeTiles(value);
