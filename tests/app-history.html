@@ -54,7 +54,7 @@ try{
  for(const [name,value] of [['Tile gap',18],['Text scale',125]])await roundtrip('home-appearance',()=>input(document.querySelector(`[aria-label="${name}"]`),value));
  await roundtrip('home-appearance',()=>document.querySelector('[aria-label="Show tile labels"]').click());
  await roundtrip('home-style',()=>document.querySelector('.home-style-choice.home-style-5').click());
- [...document.querySelectorAll('.customise-layout > nav button')].find(b=>b.textContent==='Library').click();await pause(30);await roundtrip('tile-size',()=>input(document.querySelector('[aria-label="Thumbnail size"]'),320));
+ [...document.querySelectorAll('.customise-layout > nav button')].find(b=>b.textContent==='Library').click();await pause(30);await roundtrip('tile-size',()=>input(document.querySelector('[aria-label="Default thumbnail size"]'),320));
  [...document.querySelectorAll('.customise-layout > nav button')].find(b=>b.textContent==='Motion').click();await pause(30);await roundtrip('reduce-motion',()=>document.querySelector('.customise-content input[type=checkbox]').click());
  checks.push('Every customization section roundtrips: widths, gaps, text scale, labels, Home styles, websites, thumbnail sizing and reduced motion');
  document.querySelector('[aria-label="Close customisation"]').click();await until(()=>!document.querySelector('.customise-panel'),'Close');
