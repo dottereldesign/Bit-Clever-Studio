@@ -9,6 +9,7 @@ mod content;
 mod file_moves;
 mod import_copies;
 mod db;
+mod category_folders;
 mod import_references;
 mod timestamps;
 mod download;

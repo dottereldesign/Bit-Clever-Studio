@@ -1,3 +1,4 @@
+import CodeLibrary, {CodeNavigation} from './CodeLibrary';
 import {folderViewLocation,updateFolderView,type FolderViews} from "./folderViews";
 import {normalizePreference} from "./preferenceSchema";
 import {createNativeHistoryTracker} from './nativeHistory';
@@ -12,7 +13,7 @@ import type {WorkTarget} from './workNavigation';
 import SettingsHub from './SettingsHub';
 import AnalyticsTile from './AnalyticsTile';
 import {analyticsPages} from './AnalyticsSettings';
-import Analytics, {InsightNavigation,AnalyticsNavigation} from './Analytics';
+import Analytics, {AnalyticsNavigation} from './Analytics';
 import HomeOverview from './HomeOverview';
 import {useHomeOverview} from './HomeOverviewSettings';
 import {useTabAppearance} from './TabAppearance';
@@ -497,6 +498,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
     recordDiagnostic('library.membership_index','success',performance.now()-start,{items:lib.items.length});
     return index;
   },[lib.items]);
+  const allDesignsCount=useMemo(()=>membershipIndex.designs.filter(item=>!isCollectionLink(item)).length,[membershipIndex]);
   const enlargementItems=useMemo(()=>lib.items.filter(item=>item.kind!=="file"),[lib.items]);
   const sheetItems=useMemo(()=>project!==null?membershipIndex.projects.get(project)??[]:[],[membershipIndex,project]);
   const linkDestination: LinkDestination = boardView ?? (resourcesView ? "resources" : "links");
@@ -625,7 +627,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
     document.addEventListener('keydown',key,true);document.addEventListener('keyup',end,true);document.addEventListener('pointerdown',down,true);document.addEventListener('pointerup',end);document.addEventListener('pointercancel',end);window.addEventListener('blur',end);
     return ()=>{document.removeEventListener('keydown',key,true);document.removeEventListener('keyup',end,true);document.removeEventListener('pointerdown',down,true);document.removeEventListener('pointerup',end);document.removeEventListener('pointercancel',end);window.removeEventListener('blur',end);};
   },[]);
-  const componentFolders=useMemo(()=>[...new Set([...builtInComponentFolders,...(lib.categories??[]).filter(isComponent),...lib.items.flatMap(componentFoldersOf)].map(filingCategory))],[lib]);
+  const componentFolders=useMemo(()=>[...new Set([...builtInComponentFolders,...(lib.categories??[]).filter(isComponent),...lib.items.flatMap(componentFoldersOf)].map(filingCategory))].filter(name=>!lib.deleted_categories?.includes(name)),[lib]);
   const categories = useMemo(()=>libraryCategories(lib),[lib]);
   const categoryCounts = useMemo(() => new Map([...membershipIndex.categories].map(([name,items])=>[name,items.length])), [membershipIndex]);
   const generalCounts=useMemo(()=>{const counts=new Map<string,number>();for(const item of lib.items){counts.set(item.source,(counts.get(item.source)??0)+1);if(item.kind==='link'&&!isCollectionLink(item))counts.set('__links',(counts.get('__links')??0)+1);if(item.kind==='video'&&(item.source==='Videos'||item.source.startsWith('Videos/')))counts.set('__videos',(counts.get('__videos')??0)+1);}return counts;},[lib.items]);
@@ -655,6 +657,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
   const iconTargets=useMemo(()=>[{id:'section:My Business',label:'My Business section'},{id:'section:Analytics',label:'Analytics section'},{id:'section:Code',label:'Code section'},{id:'home',label:'Home'},{id:'folders',label:'All folder icons'},{id:'section:Marketing',label:'Marketing section'},{id:'section:Leads',label:'Leads section'},{id:'section:Clients',label:'Organisations section'},{id:'section:Research',label:'Research section'},{id:'section:General',label:'General section'},{id:'section:Projects',label:'Projects section'},{id:'design',label:'Design Inspo section'},{id:'components',label:'App Components section'},{id:'design:all',label:'All Design Inspo'},
     ...collectionPrefs.map(s=>({id:`collection:${s.key}`,label:`General / ${s.name}`})),...sitePrefs.map(s=>({id:`website:${s.key}`,label:`Website / ${s.name}`})),...lib.projects.map(p=>({id:`project:${p.id}`,label:`Project / ${p.name}`})),...[...categories,'',allComponents,...componentFolders].map(name=>({id:`category:${name}`,label:categoryLabel(name)}))],[collectionPrefs,sitePrefs,lib.projects,categories,folderLabels,componentFolders]);
   const designRows=useMemo(()=>sortedFolders([...categories,''],'design'),[categories,folderOrder,folderLabels]);
+  const sidebarProjects=useMemo(()=>{const saved=folderOrder.projects??[];const rank=(id:number)=>{const index=saved.indexOf(`project:${id}`);return index<0?Infinity:index;};return [...lib.projects].sort((a,b)=>rank(a.id)-rank(b.id));},[lib.projects,folderOrder]);
   const componentRows=useMemo(()=>sortedFolders(componentFolders,'components'),[folderOrder,folderLabels,componentFolders]);
   const saveGeneral=async(draft:GeneralDraft,key?:string)=>{
     if(!draft.name)throw Error('Enter a name for the entry.');
@@ -687,7 +690,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
     if(key==="facebook"){setVideoView(true);setSource("Videos");}
     if(key==="added"||key==="viewed"){setRecent(key);if(key==="viewed"){const byId=new Map(lib.items.map(i=>[i.id,i.path]));setViewedOrder(history.filter(h=>byId.get(h.id)===h.path).map(h=>h.id));}}
   };
-  const homeShortcutDrag=useHomeShortcutDrag(()=>{navigate(null);setHomeView(true);setViewer(null);setSelected(new Set());},setHomeDrop,(id,target,after)=>{const from=id.slice(9),to=target.slice(9),group=isComponent(from)?'components':'design';if(isComponent(from)!==isComponent(to)||from===to)return;const rows=sortedFolders(group==='components'?componentFolders:[...categories,''],group).filter(name=>name!==from),index=rows.indexOf(to);if(index<0)return;rows.splice(index+(after?1:0),0,from);setFolderOrder(previous=>({...previous,[group]:rows}));});
+  const homeShortcutDrag=useHomeShortcutDrag(()=>{navigate(null);setHomeView(true);setViewer(null);setSelected(new Set());},setHomeDrop,(id,target,after)=>{if(id.startsWith('project:')&&target.startsWith('project:')){const order=sidebarProjects.map(p=>`project:${p.id}`).filter(key=>key!==id),index=order.indexOf(target);if(index>=0){order.splice(index+(after?1:0),0,id);setFolderOrder(previous=>({...previous,projects:order}));}return;}const from=id.slice(9),to=target.slice(9),group=isComponent(from)?'components':'design';if(isComponent(from)!==isComponent(to)||from===to)return;const rows=sortedFolders(group==='components'?componentFolders:[...categories,''],group).filter(name=>name!==from),index=rows.indexOf(to);if(index<0)return;rows.splice(index+(after?1:0),0,from);setFolderOrder(previous=>({...previous,[group]:rows}));});
   const homeDrag=(id:string)=>homeShortcutDrag.props(id,homeDestinations.find(d=>d.id===id)?.label??"Destination");
   const changeCategory = async (ids:number[],name:string) => {
     const items=lib.items.filter(i=>ids.includes(i.id)&&(i.kind!=="link"||isComponent(name)||componentFoldersOf(i).length>0));
@@ -728,7 +731,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
       title={`Open ${categoryLabel(s)}; drop references here to ${s&&s!==componentInbox&&s!==allComponents?"add to this folder":"change category"}`}
       onClick={() => { navigate(null); setCategory(s); }}
     >
-      {isComponent(s)&&folderAppearance[s]?.starred&&<Star className="folder-star" size={11} fill="currentColor" aria-label="Starred folder"/>}
+      {folderAppearance[s]?.starred&&<Star className="folder-star" size={11} fill="currentColor" aria-label="Starred folder"/>}
       <i className="folder-row-icon" style={{color:folderAppearance[s]?.color}}><FolderIcon preferences={icons} id={`category:${s}`} size={14}/></i>
       <span>{isComponent(s) ? categoryLabel(s).slice("Components / ".length) : categoryLabel(s)}</span>
       <small>{categoryCounts.get(s)||""}</small>
@@ -1421,7 +1424,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
           </IconButton>}>
         <div className="projects">
           <nav aria-label="Projects">
-            {lib.projects.map(p=><ProjectTree key={p.id} project={p} folders={lib.project_folders??[]} items={lib.items}
+            {sidebarProjects.map(p=><ProjectTree key={p.id} project={p} folders={lib.project_folders??[]} items={lib.items}
               active={!homeView&&!generalKey&&project===p.id} overviewActive={projectSection==='overview'} scope={projectSection==='files'?projectFolder:null} open={scope=>{navigate(p.id);setProjectFolder(scope);setProjectSection(scope===null?"overview":"files");}}
               icon={<FolderIcon preferences={icons} id={`project:${p.id}`}/>} mutate={mutate} report={report}
               paste={folder=>void pasteCapture({category:null,project:p.id,folder})} rename={()=>setModal({kind:'renameProject',id:p.id})} remove={()=>setModal({kind:'deleteProject',id:p.id})}
@@ -1454,6 +1457,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
             <span>
               All Designs
             </span>
+            <small>{allDesignsCount}</small>
           </button>
           {designRows.map(folderRow)}
         </nav>
@@ -1464,7 +1468,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
             {componentRows.map(folderRow)}
           </nav>
         </SidebarSection>
-        <InsightNavigation styleId={sectionStyle} icon={icons.overrides['section:Code']} name="Code"/>
+        <CodeNavigation styleId={sectionStyle} icon={icons.overrides['section:Code']} name="Code" active={studioView?.section==='code'} page={studioView?.page} open={page=>openStudio({section:'code',page})}/>
         <BusinessNavigation styleId={sectionStyle} icon={icons.overrides['section:My Business']} name="My Business" route={studioView} open={page=>openStudio({section:'business',page})}/>
         <AnalyticsNavigation styleId={sectionStyle} icon={icons.overrides['section:Analytics']} name="Analytics" route={studioView} open={page=>openStudio({section:'analytics',page})} homeProps={homeDrag}/>
         <SidebarSection name="Research" action={<IconButton title="Add research" onClick={()=>startSectionAdd('research')}><Plus size={14}/></IconButton>} identity="research" styleId={sectionStyle} icon={icons.overrides['section:Research']&&<AppIcon value={icons.overrides['section:Research']}/>}><nav>{researchPages.map(([page,label])=><button key={page} className={`nav-item ${studioView?.section==='research'&&studioView.page===page?'active':''}`} aria-current={studioView?.section==='research'&&studioView.page===page?'page':undefined} {...homeDrag(`studio:research:${page}`)} onClick={()=>openStudio({section:'research',page})}>{label}</button>)}</nav></SidebarSection>
@@ -1498,7 +1502,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
             </IconButton>
           </div>
         )}
-        {modal?.kind==='settings'?libraryDialog:<>{studioView?.section==='business'?<MyBusiness page={studioView.page} open={page=>openStudio({section:'business',page})}/>:studioView?.section==='analytics'?<Analytics lib={lib} page={studioView.page} open={openStudio} openProject={navigate} customize={()=>setCustomTab('analytics')}/>:studioView?.section==='clients'?<ClientsWorkspace initialise={initialiseClients} lib={lib} route={studioView} navigate={setStudioView} mutate={mutate} importInto={importStudio} preview={item=>item.kind==='link'?void openUrl(item.path).catch(report):setQuickPreview(item.id)} openProject={id=>navigate(id)}/>:studioView?.section==='research'?<ResearchWorkspace lib={lib} route={studioView} navigate={setStudioView} mutate={mutate} importInto={importStudio} preview={item=>{if(item.kind==='link')void openUrl(item.path).catch(report);else {setReceiptBrowse((lib.studio??[]).find(e=>e.id===studioView.id)?.files??[item.id]);setQuickPreview(item.id);}}} openProject={id=>navigate(id)}/>:studioView?<StudioWorkspace lib={lib} route={studioView} navigate={setStudioView} mutate={mutate} importInto={importStudio} preview={item=>{if(item.kind==='link')void openUrl(item.path).catch(report);else{setReceiptBrowse((lib.studio??[]).find(e=>e.id===studioView.id)?.files??[item.id]);setQuickPreview(item.id);}}} openProject={id=>navigate(id)}/>:homeView?<><HomeDashboard summaryShare={homeOverviewPrefs.share} summary={homeOverviewPrefs.enabled&&(homeOverviewPrefs.events||homeOverviewPrefs.projects||homeOverviewPrefs.revenue)?<HomeOverview lib={lib} prefs={homeOverviewPrefs} openProject={id=>{navigate(id);setProjectSection("overview");}} openStudio={openStudio}/>:undefined} headerActions={<ColourPicker projects={lib.projects}/>} icons={icons} style={homeStyle} appearance={homeAppearance} destinations={homeDestinations} open={openHomeDestination} incoming={homeDrop} received={()=>setHomeDrop(null)} dragging={!!homeShortcutDrag.ghost}/></>:<>
+        {modal?.kind==='settings'?libraryDialog:<>{studioView?.section==='code'?<CodeLibrary page={studioView.page}/>:studioView?.section==='business'?<MyBusiness page={studioView.page} open={page=>openStudio({section:'business',page})}/>:studioView?.section==='analytics'?<Analytics lib={lib} page={studioView.page} open={openStudio} openProject={navigate} customize={()=>setCustomTab('analytics')}/>:studioView?.section==='clients'?<ClientsWorkspace initialise={initialiseClients} lib={lib} route={studioView} navigate={setStudioView} mutate={mutate} importInto={importStudio} preview={item=>item.kind==='link'?void openUrl(item.path).catch(report):setQuickPreview(item.id)} openProject={id=>navigate(id)}/>:studioView?.section==='research'?<ResearchWorkspace lib={lib} route={studioView} navigate={setStudioView} mutate={mutate} importInto={importStudio} preview={item=>{if(item.kind==='link')void openUrl(item.path).catch(report);else {setReceiptBrowse((lib.studio??[]).find(e=>e.id===studioView.id)?.files??[item.id]);setQuickPreview(item.id);}}} openProject={id=>navigate(id)}/>:studioView?<StudioWorkspace lib={lib} route={studioView} navigate={setStudioView} mutate={mutate} importInto={importStudio} preview={item=>{if(item.kind==='link')void openUrl(item.path).catch(report);else{setReceiptBrowse((lib.studio??[]).find(e=>e.id===studioView.id)?.files??[item.id]);setQuickPreview(item.id);}}} openProject={id=>navigate(id)}/>:homeView?<><HomeDashboard summaryShare={homeOverviewPrefs.share} summary={homeOverviewPrefs.enabled&&(homeOverviewPrefs.events||homeOverviewPrefs.projects||homeOverviewPrefs.revenue)?<HomeOverview lib={lib} prefs={homeOverviewPrefs} openProject={id=>{navigate(id);setProjectSection("overview");}} openStudio={openStudio}/>:undefined} headerActions={<ColourPicker projects={lib.projects}/>} icons={icons} style={homeStyle} appearance={homeAppearance} destinations={homeDestinations} open={openHomeDestination} incoming={homeDrop} received={()=>setHomeDrop(null)} dragging={!!homeShortcutDrag.ghost}/></>:<>
         <header className="topbar">
           <div className="view-title">
             <h1>{title}</h1>
@@ -1732,7 +1736,7 @@ export default function App({startOnHome}:{startOnHome?:boolean}={}) {
       )}
       {removedOpen && <RemovedDialog revision={lib} close={() => setRemovedOpen(false)} restore={(ids) => mutate({ action: "restore_items", ids })} />}
       {homeShortcutDrag.ghost&&<div className="home-drag-ghost" style={{left:homeShortcutDrag.ghost.x+14,top:homeShortcutDrag.ghost.y+16}}><Plus size={14}/>{homeShortcutDrag.ghost.label}<small>Reorder folders or drop on Home</small></div>}
-      {folderMenu&&<FolderRename key={folderMenu.name} target={folderMenu} canRename={!!folderMenu.name&&folderMenu.name!==allComponents&&folderMenu.name!==componentInbox} paste={()=>void pasteCapture({category:folderMenu.name,project:null,folder:null})} close={()=>setFolderMenu(null)} appearance={isComponent(folderMenu.name)?{...folderAppearance[folderMenu.name],icon:icons.overrides[`category:${folderMenu.name}`],setColor:color=>setFolderAppearance(previous=>({...previous,[folderMenu.name]:{...previous[folderMenu.name],color}})),toggleStar:()=>setFolderAppearance(previous=>({...previous,[folderMenu.name]:{...previous[folderMenu.name],starred:!previous[folderMenu.name]?.starred}})),setIcon:icon=>setIcons(previous=>{const overrides={...previous.overrides};if(icon)overrides[`category:${folderMenu.name}`]=icon;else delete overrides[`category:${folderMenu.name}`];return {...previous,overrides};})}:undefined} save={name=>{const list=isComponent(folderMenu.name)?componentFolders:categories;if(list.some(key=>key!==folderMenu.name&&categoryLabel(key).replace(/^Components \/ /,'').toLocaleLowerCase()===name.toLocaleLowerCase()))throw Error('A folder with that name already exists.');setFolderLabels({...folderLabels,[folderMenu.name]:name});}}/>}
+      {folderMenu&&<FolderRename key={folderMenu.name} target={folderMenu} canRename={!!folderMenu.name&&folderMenu.name!==allComponents&&folderMenu.name!==componentInbox} remove={folderMenu.name&&folderMenu.name!==allComponents&&folderMenu.name!==componentInbox?async()=>{await mutate({action:"delete_category",value:folderMenu.name});if(category===folderMenu.name){navigate(null);if(isComponent(folderMenu.name))setCategory(allComponents);}}:undefined} paste={()=>void pasteCapture({category:folderMenu.name,project:null,folder:null})} close={()=>setFolderMenu(null)} appearance={{...folderAppearance[folderMenu.name],icon:icons.overrides[`category:${folderMenu.name}`],setColor:color=>setFolderAppearance(previous=>({...previous,[folderMenu.name]:{...previous[folderMenu.name],color}})),toggleStar:()=>setFolderAppearance(previous=>({...previous,[folderMenu.name]:{...previous[folderMenu.name],starred:!previous[folderMenu.name]?.starred}})),setIcon:icon=>setIcons(previous=>{const overrides={...previous.overrides};if(icon)overrides[`category:${folderMenu.name}`]=icon;else delete overrides[`category:${folderMenu.name}`];return {...previous,overrides};})}} save={name=>{const list=isComponent(folderMenu.name)?componentFolders:categories;if(list.some(key=>key!==folderMenu.name&&categoryLabel(key).replace(/^Components \/ /,'').toLocaleLowerCase()===name.toLocaleLowerCase()))throw Error('A folder with that name already exists.');setFolderLabels({...folderLabels,[folderMenu.name]:name});}}/>}
       {quickContact&&<AddContactDialog entries={lib.studio??[]} mutate={mutate} close={()=>setQuickContact(false)} added={id=>{setQuickContact(false);openStudio({section:'leads',page:'contacts',id});}}/>}
       {customTab&&<Customization initial={customTab} close={()=>setCustomTab(null)} sectionStyle={sectionStyle} chooseSection={setSectionStyle} sidebarLayout={sidebarLayout} chooseLayout={setSidebarLayout} icons={icons} changeIcons={setIcons} iconTargets={iconTargets} generalOptions={generalOptions} saveGeneral={saveGeneral} homeStyle={homeStyle} chooseHome={setHomeStyle} sidebarWidth={sidebarWidth} setSidebarWidth={setSidebarWidth} tileSize={defaultSize} setTileSize={setDefaultSize} collections={collectionPrefs} setCollections={setCollectionPrefs} sites={sitePrefs} setSites={setSitePrefs} reduced={reducedMotion} setReduced={setReducedMotion} home={homeAppearance} changeHome={setHomeAppearance} manageLibrary={()=>{setCustomTab(null);setModal({kind:'settings'});}}/>}
       {itemMenu && <ItemMenu target={itemMenu} lib={lib} close={closeItemMenu} report={report}

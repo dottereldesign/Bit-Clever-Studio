@@ -1,8 +1,9 @@
+import {normalizeCodePrefs} from './codeLibraryData';
 import {folderSorts} from './folderViews';
 import {normalizeActiveColours} from './activeColours';
 import {defaultAppearance} from './defaultAppearance';
 
-export const preferenceKeys=['active-colours','sidebar-hidden-sections','app-theme','app-colour-sources','personal-studio-default','settings-appearance','customise-tab-order','analytics-appearance','home-overview','tab-appearance','cta-appearance','app-branding','clients-startup','clients-last-seen','sidebar-section-order','sidebar-active-green','sidebar-emerald-default-applied','research-view','onboarding','sidebar-section-colours','studio-layouts','project-file-layouts','folder-view-settings','selection-style','colour-history','collection-shortcuts','site-shortcuts','tile-size','sidebar-width','sidebar-section-style','home-style','home-appearance','reduce-motion','sidebar-layout','app-icons','folder-labels','folder-appearance','sidebar-folder-order','home-plan','home-tiles'];
+export const preferenceKeys=['code-library','active-colours','sidebar-hidden-sections','app-theme','app-colour-sources','personal-studio-default','settings-appearance','customise-tab-order','analytics-appearance','home-overview','tab-appearance','cta-appearance','app-branding','clients-startup','clients-last-seen','sidebar-section-order','sidebar-active-green','sidebar-emerald-default-applied','research-view','onboarding','sidebar-section-colours','studio-layouts','project-file-layouts','folder-view-settings','selection-style','colour-history','collection-shortcuts','site-shortcuts','tile-size','sidebar-width','sidebar-section-style','home-style','home-appearance','reduce-motion','sidebar-layout','app-icons','folder-labels','folder-appearance','sidebar-folder-order','home-plan','home-tiles'];
 export const isPreference=(key:string)=>preferenceKeys.includes(key)||key.startsWith('sidebar-open:');
 export const isStoredPreference=(key:string)=>isPreference(key)||key==='recent-work'||/^(project-scroll|project-files-location|client-view):/.test(key);
 export const isRecord=(value:unknown):value is Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value);
@@ -59,6 +60,7 @@ export function normalizePreference(key:string,value:unknown):unknown {
   if(key==='collection-shortcuts'||key==='site-shortcuts')return shortcuts(value);
   if(['sidebar-hidden-sections','customise-tab-order','sidebar-section-order'].includes(key))return strings(value);
   if(key.startsWith('sidebar-open:')||['reduce-motion','sidebar-emerald-default-applied'].includes(key))return boolean(value);
+  if(key==='code-library')return normalizeCodePrefs(value);
   if(key==='active-colours')return normalizeActiveColours(value);
   if(key==='sidebar-active-green')return oneOf(value,['soft','sage','mint','lime','olive','fern','eucalyptus','forest','emerald','pine']);
   const ranges:Record<string,[number,number]>={'tile-size':[80,1000],'sidebar-width':[160,600],'selection-style':[1,50],'sidebar-section-style':[1,1000],'home-style':[1,20],'sidebar-layout':[1,20]};

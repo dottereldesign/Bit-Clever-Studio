@@ -68,7 +68,7 @@ export function ProjectTree({project,folders,items,active,overviewActive,scope,o
   return <div className="project-tree" ref={tree}>
     <div className={`project-row ${active&&scope===null?'active':''}`} data-project-id={project.id} data-project-name={project.name} {...dragProps(null)} onContextMenu={e=>context(e,null)}>
       <button className="folder-chevron" aria-expanded={expanded} aria-label={`${expanded?'Collapse':'Expand'} ${project.name}`} onClick={()=>setExpanded(!expanded)}><ChevronRight size={12} style={{transform:expanded?'rotate(90deg)':undefined}}/></button>
-      <button className="nav-item" {...homeProps} aria-current={active&&overviewActive?'page':undefined} onClick={()=>open(null)}>{icon}<span>{project.name}</span><small>{project.count||''}</small></button>
+      <button className="nav-item" {...homeProps} data-folder-order="projects" aria-current={active&&overviewActive?'page':undefined} onClick={()=>open(null)}>{icon}<span>{project.name}</span><small>{project.count||''}</small></button>
       <button className="folder-more" aria-label={`Options for ${project.name}`} onClick={e=>context(e,null)}><MoreHorizontal size={15}/></button>
     </div>
     {expanded&&<div className="project-folder-list">

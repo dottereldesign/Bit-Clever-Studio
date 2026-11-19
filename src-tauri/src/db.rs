@@ -76,6 +76,8 @@ pub struct Library {
     pub redo_count: usize,
     #[serde(default)]
     pub categories: Vec<String>,
+    #[serde(default)]
+    pub deleted_categories: Vec<String>,
     pub items: Vec<Item>,
     pub projects: Vec<Label>,
     pub tags: Vec<Label>,
@@ -361,6 +363,7 @@ fn load_snapshot(path: &Path, scanning: bool, after_items: impl FnOnce()) -> Res
         redo_count: db.query_row("SELECT count(*) FROM organisation_redo",[],|r|r.get(0)).map_err(err)?,
         undo_label: db.query_row("SELECT label FROM organisation_history ORDER BY id DESC LIMIT 1",[],|r|r.get(0)).ok(),
         undo_count: db.query_row("SELECT count(*) FROM organisation_history",[],|r|r.get(0)).map_err(err)?,
+        deleted_categories: crate::category_folders::deleted(&db)?,
         categories,
         items,
         projects: labels("projects", "item_projects")?,
@@ -456,7 +459,7 @@ pub fn design_memberships(db:&Connection,id:i64)->Result<Vec<String>>{
     let rows=query.query_map([id],|r|r.get(0)).map_err(err)?;rows.collect::<std::result::Result<_,_>>().map_err(err)
 }
 pub fn project_only(db:&Connection,id:i64)->Result<bool>{db.query_row("SELECT project_only FROM items WHERE id=?",[id],|r|r.get(0)).map_err(err)}
-fn materialize_design_folder(db:&Connection,id:i64)->Result<()>{
+pub(crate) fn materialize_design_folder(db:&Connection,id:i64)->Result<()>{
     if project_only(db,id)?{return Ok(());}
     let (source,assigned):(String,Option<String>)=db.query_row("SELECT i.source,c.name FROM items i LEFT JOIN item_categories c ON c.item_id=i.id WHERE i.id=?",[id],|r|Ok((r.get(0)?,r.get(1)?))).map_err(err)?;
     let current=assigned.unwrap_or_else(||default_category(&source));
@@ -480,7 +483,7 @@ pub fn component_memberships(db:&Connection,id:i64)->Result<Vec<String>> {
     let rows=stmt.query_map([id],|r|r.get(0)).map_err(err)?;
     rows.collect::<std::result::Result<Vec<_>,_>>().map_err(err)
 }
-fn materialize_component_folder(db:&Connection,id:i64)->Result<()> {
+pub(crate) fn materialize_component_folder(db:&Connection,id:i64)->Result<()> {
     let previous:Option<String>=db.query_row("SELECT name FROM item_categories WHERE item_id=?",[id],|r|r.get(0)).optional().map_err(err)?;
     if let Some(name)=previous.filter(|n|n.starts_with("Components / ")) {
         if name!="Components / Uncategorised"||component_memberships(db,id)?.is_empty(){db.execute("INSERT OR IGNORE INTO item_component_folders(item_id,name) VALUES(?,?)",params![id,name]).map_err(err)?;}
@@ -549,12 +552,15 @@ pub fn change(path: &Path, c: Change) -> Result<()> {
         "update_project_overview" => crate::project_overview::change(&tx,c.target.unwrap_or(0),c.value.as_deref().unwrap_or(""))?,
         "unfile_project_folder"|"create_project_folder"|"rename_project_folder"|"move_project_folder"|"delete_project_folder"|"reorder_project_folders"|"add_project_folder"|"remove_project_folder" => crate::project_folders::change(&tx,&c)?,
         "rate_links"=>{let rating=if value.is_empty(){None}else{Some(value.parse::<i64>().map_err(err)?)};if rating.is_some_and(|r|!(1..=5).contains(&r)){return Err("Choose a rating from 1 to 5".into());}for id in c.ids{tx.execute("UPDATE items SET rating=? WHERE id=? AND kind='link'",params![rating,id]).map_err(err)?;}},
+        "delete_category" => crate::category_folders::delete(&tx,value)?,
         "create_category" => {
+            crate::category_folders::restore_name(&tx,name.trim())?;
             tx.execute("INSERT OR IGNORE INTO categories(name) VALUES(?)",[valid_name(name)?]).map_err(err)?;
         }
         "set_category" => {
             if c.ids.is_empty() { return Err("Select at least one reference.".into()); }
             let added=now();let folder=value.trim();
+            crate::category_folders::restore_name(&tx,folder)?;
             for id in c.ids {
                 let entering=category_is_new(&tx,id,folder)?;
                 let stale_inbox=(!folder.is_empty()&&design_memberships(&tx,id)?.iter().any(|n|n.is_empty()))
@@ -807,6 +813,8 @@ fn import_inner(path: &Path, source: PathBuf) -> Result<()> {
         }
         set_setting(&tx,"source_layout","1")?;
     }
+    // Restores carry folder deletions; merging metadata must not hide existing destination folders.
+    if tx.query_row("SELECT count(*) FROM items",[],|r|r.get::<_,i64>(0)).map_err(err)?==0 { crate::category_folders::set_deleted(&tx,&backup.library.deleted_categories)?; }
     let mut projects = std::collections::HashMap::new();
     for category in backup.library.categories {
         tx.execute("INSERT OR IGNORE INTO categories(name) VALUES(?)",[valid_name(&category)?]).map_err(err)?;
